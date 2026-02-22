@@ -22,10 +22,10 @@ VITE_SUPABASE_URL = "https://pyltlobngdnoqjnrxefn.supabase.co"
 crons = ["0 0 * * *", "0 15 * * *"]
 
 [[d1_databases]]
-binding = "db-runbike"
-database_name = "db-runbike"
+binding = "RUNBIKE_DB"
+database_name = "RUNBIKE_DB"
 database_id = "b472284e-4ae4-4bf9-972a-77663dec0686"
 
 [[kv_namespaces]]
-binding = "CHIACHIACOMING_KV"
+binding = "RUNBIKE_KV"
 id = "ebae2931e47248e29192f2eec93fa557"

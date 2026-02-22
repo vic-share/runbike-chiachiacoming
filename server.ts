@@ -16,7 +16,7 @@ const PORT = 3000;
 const TEAM_ID = 1;
 
 // --- Database Setup ---
-const db = new Database('local.db');
+const db = new Database(process.env.RUNBIKE_DB_FILENAME || 'local.db');
 
 function initDB() {
     db.exec(`
@@ -165,7 +165,7 @@ function initDB() {
 initDB();
 
 // --- KV Store Setup ---
-const KV_FILE = 'kv.json';
+const KV_FILE = process.env.RUNBIKE_KV_FILENAME || 'kv.json';
 const KV = {
     async get(key, options = {}) {
         try {
