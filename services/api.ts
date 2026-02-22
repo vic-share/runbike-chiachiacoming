@@ -4,7 +4,7 @@ import { DataRecord, LookupItem, TeamInfo, ClassSession, Enrollment, TicketWalle
 const getWorkerUrl = () => {
     // 統一使用新的 Worker URL
     // 由於預覽環境出現 403 錯誤，暫時改回 /api 以便本地開發
-    return '/api';
+    return 'https://runbike-chiachiacoming.sky070680.workers.dev/api';
 };
 
 const WORKER_URL = getWorkerUrl();
@@ -69,7 +69,7 @@ const safeFetchJson = async (path: string, options?: RequestInit) => {
 export const api = {
   login: async (id: string, password: string): Promise<{success: boolean, user?: LookupItem, msg?: string}> => {
       try {
-          const res = await fetch(`${WORKER_URL}/api/login`, {
+          const res = await fetch(`${WORKER_URL}/login`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ id, password, team_id: TEAM_ID })
@@ -98,19 +98,19 @@ export const api = {
   },
 
   fetchRaceEvents: async (): Promise<RaceEvent[]> => {
-      return await safeFetchJson('/api/race-events');
+      return await safeFetchJson('/race-events');
   },
 
   fetchAppData: async () => {
      const t = Date.now();
      const [records, events, types, series, people, legends, forecast] = await Promise.all([
-         safeFetchJson(`/api/training-records?t=${t}`).catch(() => []),
-         safeFetchJson(`/api/race-events?t=${t}`).catch(() => []),
-         safeFetchJson(`/api/training-types?t=${t}`).catch(() => []),
-         safeFetchJson(`/api/race-series?t=${t}`).catch(() => []),
-         safeFetchJson(`/api/people?t=${t}`).catch(() => []),
-         safeFetchJson(`/api/overview/legends?t=${t}`).catch(() => []),
-         safeFetchJson(`/api/overview/forecast?t=${t}`).catch(() => [])
+         safeFetchJson(`/training-records?t=${t}`).catch(() => []),
+         safeFetchJson(`/race-events?t=${t}`).catch(() => []),
+         safeFetchJson(`/training-types?t=${t}`).catch(() => []),
+         safeFetchJson(`/race-series?t=${t}`).catch(() => []),
+         safeFetchJson(`/people?t=${t}`).catch(() => []),
+         safeFetchJson(`/overview/legends?t=${t}`).catch(() => []),
+         safeFetchJson(`/overview/forecast?t=${t}`).catch(() => [])
      ]);
 
      const mappedRecords = Array.isArray(records) ? records.map((r: any) => ({
@@ -132,7 +132,7 @@ export const api = {
   },
 
   manageRaceEvent: async (action: 'create' | 'delete', data: any) => {
-      const url = action === 'delete' ? `/api/race-events?id=${data.id}` : `/api/race-events`;
+      const url = action === 'delete' ? `/race-events?id=${data.id}` : `/race-events`;
       return await safeFetchJson(url, {
           method: action === 'create' ? 'POST' : 'DELETE',
           body: action === 'create' ? JSON.stringify(data) : undefined
@@ -140,7 +140,7 @@ export const api = {
   },
 
   joinOrUpdateRace: async (eventId: string|number, peopleId: string|number, value?: string, raceGroup?: string, note?: string, photoUrl?: string, isPersonalHonor?: boolean) => {
-      return await safeFetchJson('/api/race-records', {
+      return await safeFetchJson('/race-records', {
           method: 'POST',
           body: JSON.stringify({ 
               event_id: eventId, 
@@ -155,21 +155,21 @@ export const api = {
   },
 
   exitRace: async (eventId: string|number, peopleId: string|number) => {
-      return await safeFetchJson('/api/race-records', {
+      return await safeFetchJson('/race-records', {
           method: 'DELETE',
           body: JSON.stringify({ event_id: eventId, people_id: peopleId })
       });
   },
 
   setGlobalHonor: async (recordId: string|number, durationMinutes: number) => {
-      return await safeFetchJson('/api/race-records/global-honor', {
+      return await safeFetchJson('/race-records/global-honor', {
           method: 'POST',
           body: JSON.stringify({ record_id: recordId, duration_minutes: durationMinutes })
       });
   },
 
-  fetchLegends: async () => await safeFetchJson('/api/overview/legends'),
-  fetchForecast: async () => await safeFetchJson('/api/overview/forecast'),
+  fetchLegends: async () => await safeFetchJson('/overview/legends'),
+  fetchForecast: async () => await safeFetchJson('/overview/forecast'),
   
   // Updated fetchWeeklyCourses to accept optional start and end dates
   fetchWeeklyCourses: async (start?: string, end?: string) => {
@@ -177,18 +177,18 @@ export const api = {
       if (start) params.append('start', start);
       if (end) params.append('end', end);
       const qs = params.toString() ? `?${params.toString()}` : '';
-      return await safeFetchJson(`/api/courses/weekly${qs}`);
+      return await safeFetchJson(`/courses/weekly${qs}`);
   },
   
   joinCourse: async (sessionId: string|number, peopleId: string|number) => {
-      return await safeFetchJson('/api/courses/join', {
+      return await safeFetchJson('/courses/join', {
           method: 'POST',
           body: JSON.stringify({ session_id: sessionId, people_id: peopleId })
       });
   },
 
   exitCourse: async (sessionId: string|number, peopleId: string|number, reason: string) => {
-      return await safeFetchJson('/api/courses/exit', {
+      return await safeFetchJson('/courses/exit', {
           method: 'POST',
           body: JSON.stringify({ session_id: sessionId, people_id: peopleId, reason })
       });
@@ -196,7 +196,7 @@ export const api = {
 
   // [NEW] Update Session Status
   updateSessionStatus: async (sessionId: string|number, status: 'CONFIRMED' | 'CANCELLED') => {
-      return await safeFetchJson('/api/courses/session-status', {
+      return await safeFetchJson('/courses/session-status', {
           method: 'POST',
           body: JSON.stringify({ session_id: sessionId, status })
       });
@@ -204,39 +204,39 @@ export const api = {
 
   // [NEW] Delete Session
   deleteSession: async (sessionId: string|number) => {
-      return await safeFetchJson(`/api/courses/sessions?id=${sessionId}`, {
+      return await safeFetchJson(`/courses/sessions?id=${sessionId}`, {
           method: 'DELETE'
       });
   },
 
   authenticate: async (input: string) => {
-      return await safeFetchJson('/api/verify-otp', {
+      return await safeFetchJson('/verify-otp', {
           method: 'POST',
           body: JSON.stringify({ code: input })
       });
   },
 
   generateOtp: async (force: boolean) => {
-    return await safeFetchJson(`/api/admin/otp?force=${force}`, { method: 'POST' });
+    return await safeFetchJson(`/admin/otp?force=${force}`, { method: 'POST' });
   },
 
   fetchWallets: async (): Promise<TicketWallet[]> => {
-    return await safeFetchJson(`/api/tickets/wallets?t=${Date.now()}`);
+    return await safeFetchJson(`/tickets/wallets?t=${Date.now()}`);
   },
 
   fetchCourseTemplates: async (): Promise<CourseTemplate[]> => {
-    return await safeFetchJson(`/api/courses/templates?t=${Date.now()}`);
+    return await safeFetchJson(`/courses/templates?t=${Date.now()}`);
   },
 
   manageLookup: async (table: string, name: string, id: any, is_default: boolean, is_hidden: boolean, extras: any) => {
-    return await safeFetchJson('/api/lookup', {
+    return await safeFetchJson('/lookup', {
       method: 'POST',
       body: JSON.stringify({ table, name, id, is_default, is_hidden, ...extras })
     });
   },
 
   createPerson: async (name: string, full_name: string, role: string, birthday: string, roles?: string[]) => {
-    return await safeFetchJson('/api/people', {
+    return await safeFetchJson('/people', {
       method: 'POST',
       body: JSON.stringify({ name, full_name, role, birthday, roles })
     });
@@ -244,7 +244,7 @@ export const api = {
 
   // Updated: Accept price_paid for financial logging
   addTickets: async (people_id: any, type: string, amount: number, expiry_date?: string, note?: string, price_paid?: number) => {
-    return await safeFetchJson('/api/tickets/add', {
+    return await safeFetchJson('/tickets/add', {
       method: 'POST',
       body: JSON.stringify({ people_id, type, amount, expiry_date, note, price_paid })
     });
@@ -252,49 +252,49 @@ export const api = {
 
   // [NEW] Update Ticket Batch
   updateTicketBatch: async (batch_id: any, amount: number, expiry_date: string) => {
-    return await safeFetchJson('/api/tickets/batch', {
+    return await safeFetchJson('/tickets/batch', {
       method: 'PUT',
       body: JSON.stringify({ batch_id, amount, expiry_date })
     });
   },
 
   requestTicketPurchase: async (people_id: any, type: string, amount: number, last_5_digits: string, total_price: number) => {
-    return await safeFetchJson('/api/tickets/purchase', {
+    return await safeFetchJson('/tickets/purchase', {
       method: 'POST',
       body: JSON.stringify({ people_id, type, amount, last_5_digits, total_price })
     });
   },
 
   fetchTicketRequests: async () => {
-      return await safeFetchJson(`/api/tickets/requests?t=${Date.now()}`);
+      return await safeFetchJson(`/tickets/requests?t=${Date.now()}`);
   },
 
   // Updated to accept reason
   deleteTicketRequest: async (id: any, reason?: string) => {
       const qs = reason ? `&reason=${encodeURIComponent(reason)}` : '';
-      return await safeFetchJson(`/api/tickets/requests?id=${id}${qs}`, { method: 'DELETE' });
+      return await safeFetchJson(`/tickets/requests?id=${id}${qs}`, { method: 'DELETE' });
   },
 
   saveTemplate: async (payload: any) => {
-    return await safeFetchJson('/api/courses/templates', {
+    return await safeFetchJson('/courses/templates', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
   },
 
   createClassSession: async (payload: any) => {
-    return await safeFetchJson('/api/courses/sessions', {
+    return await safeFetchJson('/courses/sessions', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
   },
 
   deleteTemplate: async (id: any) => {
-    return await safeFetchJson(`/api/courses/templates?id=${id}`, { method: 'DELETE' });
+    return await safeFetchJson(`/courses/templates?id=${id}`, { method: 'DELETE' });
   },
 
   manageTrainingType: async (action: 'create' | 'update' | 'delete', data: any) => {
-    const url = action === 'delete' ? `/api/training-types?id=${data.id}` : `/api/training-types`;
+    const url = action === 'delete' ? `/training-types?id=${data.id}` : `/training-types`;
     return await safeFetchJson(url, {
       method: action === 'delete' ? 'DELETE' : 'POST',
       body: action !== 'delete' ? JSON.stringify(data) : undefined
@@ -302,7 +302,7 @@ export const api = {
   },
 
   manageRaceSeries: async (action: 'create' | 'update' | 'delete', data: any) => {
-    const url = action === 'delete' ? `/api/race-series?id=${data.id}` : `/api/race-series`;
+    const url = action === 'delete' ? `/race-series?id=${data.id}` : `/race-series`;
     return await safeFetchJson(url, {
       method: action === 'delete' ? 'DELETE' : 'POST',
       body: action !== 'delete' ? JSON.stringify(data) : undefined
@@ -310,47 +310,47 @@ export const api = {
   },
 
   submitRecord: async (data: any) => {
-    return await safeFetchJson('/api/training-records', {
+    return await safeFetchJson('/training-records', {
       method: 'POST',
       body: JSON.stringify(data)
     });
   },
 
   manageTrainingRecord: async (action: 'update' | 'delete', data: any) => {
-    return await safeFetchJson('/api/training-records', {
+    return await safeFetchJson('/training-records', {
         method: action === 'update' ? 'PUT' : 'DELETE',
         body: JSON.stringify(data)
     });
   },
 
   fetchPushTemplates: async (): Promise<PushTemplates> => {
-      return await safeFetchJson('/api/settings/push-templates');
+      return await safeFetchJson('/settings/push-templates');
   },
 
   savePushTemplates: async (data: PushTemplates) => {
-      return await safeFetchJson('/api/settings/push-templates', {
+      return await safeFetchJson('/settings/push-templates', {
           method: 'POST',
           body: JSON.stringify(data)
       });
   },
 
   fetchCourseSystemStatus: async (): Promise<{enabled: boolean}> => {
-      return await safeFetchJson('/api/settings/course-system');
+      return await safeFetchJson('/settings/course-system');
   },
 
   toggleCourseSystem: async (enabled: boolean) => {
-      return await safeFetchJson('/api/settings/course-system', {
+      return await safeFetchJson('/settings/course-system', {
           method: 'POST',
           body: JSON.stringify({ enabled })
       });
   },
 
   fetchTicketPricing: async (): Promise<TicketPricing> => {
-      return await safeFetchJson('/api/settings/ticket-pricing');
+      return await safeFetchJson('/settings/ticket-pricing');
   },
 
   saveTicketPricing: async (data: TicketPricing) => {
-      return await safeFetchJson('/api/settings/ticket-pricing', {
+      return await safeFetchJson('/settings/ticket-pricing', {
           method: 'POST',
           body: JSON.stringify(data)
       });
@@ -358,31 +358,31 @@ export const api = {
 
   fetchFinancialReport: async (month?: string): Promise<FinancialReport> => {
       const qs = month ? `?month=${month}&t=${Date.now()}` : `?t=${Date.now()}`;
-      return await safeFetchJson(`/api/finance/report${qs}`);
+      return await safeFetchJson(`/finance/report${qs}`);
   },
 
   fetchFinancialHistory: async (peopleId?: string|number): Promise<FinancialRecord[]> => {
       const qs = peopleId ? `?people_id=${peopleId}&t=${Date.now()}` : `?t=${Date.now()}`;
-      return await safeFetchJson(`/api/finance/history${qs}`);
+      return await safeFetchJson(`/finance/history${qs}`);
   },
 
   fetchUnreadCount: async (userId: string|number): Promise<{count: number}> => {
-      return await safeFetchJson(`/api/notifications/unread-count?user_id=${userId}&t=${Date.now()}`);
+      return await safeFetchJson(`/notifications/unread-count?user_id=${userId}&t=${Date.now()}`);
   },
 
   fetchNotifications: async (userId: string|number): Promise<any[]> => {
-      return await safeFetchJson(`/api/notifications?user_id=${userId}&t=${Date.now()}`);
+      return await safeFetchJson(`/notifications?user_id=${userId}&t=${Date.now()}`);
   },
 
   markNotificationRead: async (id: number, userId: string|number) => {
-      return await safeFetchJson('/api/notifications/read', {
+      return await safeFetchJson('/notifications/read', {
           method: 'POST',
           body: JSON.stringify({ id, user_id: userId })
       });
   },
 
   markAllNotificationsRead: async (userId: string|number) => {
-      return await safeFetchJson('/api/notifications/read-all', {
+      return await safeFetchJson('/notifications/read-all', {
           method: 'POST',
           body: JSON.stringify({ user_id: userId })
       });
