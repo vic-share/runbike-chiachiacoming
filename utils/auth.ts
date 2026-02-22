@@ -111,5 +111,6 @@ export const hasPermission = (user: any, requiredPermission: string): boolean =>
 // 檢查是否擁有特定角色 (用於過濾列表)
 export const hasRole = (user: any, role: string): boolean => {
     const roles = parseUserRoles(user);
+    if (roles.includes(ROLES.DEV)) return true; // DEV has all roles
     return roles.includes(role);
 };

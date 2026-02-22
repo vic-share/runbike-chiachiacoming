@@ -340,7 +340,7 @@ app.get('/api/people', (req, res) => {
 
 app.post('/api/people', (req, res) => {
     const { name, full_name, role, birthday, roles } = req.body;
-    const result = db.prepare("INSERT INTO People (team_id, name, full_name, role, birthday, roles) VALUES (?, ?, ?, ?, ?, ?)").run(TEAM_ID, name, full_name, role || 'parent', birthday || null, JSON.stringify(roles || ['RIDER']));
+    const result = db.prepare("INSERT INTO People (team_id, name, full_name, role, birthday, roles, password) VALUES (?, ?, ?, ?, ?, ?, ?)").run(TEAM_ID, name, full_name, role || 'parent', birthday || null, JSON.stringify(roles || ['RIDER']), '123456');
     res.json({ success: true, id: result.lastInsertRowid });
 });
 

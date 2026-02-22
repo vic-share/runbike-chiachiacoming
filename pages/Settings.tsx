@@ -102,6 +102,14 @@ const getRoleStyle = (person: any) => {
     return { tier: 1, border: 'border-white/10', shadow: 'shadow-2xl', iconColor: 'text-zinc-500' };
 };
 
+const sortRiders = (a: any, b: any) => {
+    const aIsRider = a.roles && a.roles.includes(ROLES.RIDER);
+    const bIsRider = b.roles && b.roles.includes(ROLES.RIDER);
+    if (aIsRider && !bIsRider) return -1;
+    if (!aIsRider && bIsRider) return 1;
+    return a.name.localeCompare(b.name);
+};
+
 const sortPeopleByRole = (a: any, b: any) => {
     const tierA = getRoleStyle(a).tier;
     const tierB = getRoleStyle(b).tier;
@@ -143,7 +151,7 @@ const MenuCard = ({ title, icon, onClick, description, variant = 'default', disa
     return (
         <button 
             onClick={disabled ? () => alert('系統目前關閉中，無法操作此功能') : onClick} 
-            className={`glass-card p-4 rounded-2xl flex flex-col justify-between h-32 relative overflow-hidden active:scale-95 transition-all group border w-full text-left touch-manipulation select-none ${bgClass} ${disabled ? '' : 'cursor-pointer'}`}
+            className={`glass-card p-4 rounded-2xl flex flex-col justify-between h-32 relative overflow-hidden transition-all group border w-full text-left touch-manipulation select-none ${bgClass} ${disabled ? '' : 'cursor-pointer'}`}
         >
             <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors mb-2 shadow-inner pointer-events-none ${iconClass}`}>
                 {React.cloneElement(icon as any, { size: 20 })}
@@ -190,6 +198,16 @@ const TemplateEditor = ({ title, icon, colorClass, data, fieldPrefix, setData, t
     );
 };
 
+const Header = ({ title, onAdd, onBack }: { title: string, onAdd?: () => void, onBack: () => void }) => (
+    <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onBack(); }} className="w-14 h-14 rounded-xl bg-zinc-900 flex items-center justify-center text-zinc-400 active:bg-zinc-800 active:scale-95 transition-all cursor-pointer z-50 touch-manipulation border border-white/5"> <ArrowLeft size={24}/> </button>
+          <h2 className="text-2xl font-black text-white italic">{title}</h2>
+        </div>
+        {onAdd && ( <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAdd(); }} className="w-14 h-14 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green active:scale-90 transition-transform"> <Plus size={24} strokeWidth={3} /> </button> )}
+    </div>
+);
+
 const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroups, onLoginSuccess, initialView }) => {
   const [user, setUser] = useState(api.getUser());
   const [reportDateRange, setReportDateRange] = useState<'1W' | '1M' | '3M' | 'ALL' | 'CUSTOM'>('1M');
@@ -197,7 +215,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const [customDateEnd, setCustomDateEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
   
   // ... (State definitions remain same) ...
-  const [adminView, setAdminView] = useState<'menu' | 'players' | 'tickets' | 'courses' | 'training' | 'series' | 'push_system'>('menu');
+  const [adminView, setAdminView] = useState<'menu' | 'players' | 'tickets' | 'courses' | 'training' | 'series' | 'push_system' | 'course_ticket'>('menu');
   const [ticketView, setTicketView] = useState<'menu' | 'inventory' | 'pricing' | 'history' | 'report'>('menu');
   const [pushView, setPushView] = useState<'menu' | 'announcement' | 'race_automation' | 'data_automation' | 'course_automation' | 'share_config'>('menu');
   const [courseCategory, setCourseCategory] = useState<'ROUTINE' | 'GROUP' | 'SPECIAL' | null>(null);
@@ -214,6 +232,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [wallets, setWallets] = useState<TicketWallet[]>([]);
+  const myWallet = user ? wallets.find(w => String(w.people_id) === String(user.id)) : undefined;
   const [ticketRequests, setTicketRequests] = useState<any[]>([]);
   const [expandedWalletId, setExpandedWalletId] = useState<string|number|null>(null);
   const [editingBatch, setEditingBatch] = useState<any>(null);
@@ -301,11 +320,11 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   useEffect(() => {
       if(user) {
           loadWallets();
-          if(adminView === 'tickets' && hasPermission(user, PERMISSIONS.TICKET_VIEW_ALL)) { loadTicketRequests(); loadTicketPrices(); loadFinancialReport(); loadCourseSystemStatus(); }
-          if(adminView === 'courses' && hasPermission(user, PERMISSIONS.COURSE_VIEW_ALL)) { loadTemplates(); loadSessions(); loadCourseSystemStatus(); loadTicketPrices(); }
+          if((adminView === 'tickets' || adminView === 'course_ticket') && hasPermission(user, PERMISSIONS.TICKET_VIEW_ALL)) { loadTicketRequests(); loadTicketPrices(); loadFinancialReport(); loadCourseSystemStatus(); }
+          if((adminView === 'courses' || adminView === 'course_ticket') && hasPermission(user, PERMISSIONS.COURSE_VIEW_ALL)) { loadTemplates(); loadSessions(); loadCourseSystemStatus(); loadTicketPrices(); }
           if(adminView === 'push_system' && hasPermission(user, PERMISSIONS.PUSH_MANAGE)) loadPushTemplates();
       }
-  }, [adminView, user]);
+  }, [adminView, user, ticketView]);
 
   useEffect(() => { if (modalType === 'settings_menu' && showModal) { if ('Notification' in window) setPushPermission(Notification.permission); } }, [modalType, showModal]);
   const passwordInputRef = useRef<HTMLInputElement>(null);
@@ -480,6 +499,10 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const handleSendBroadcast = async () => { if (!pushMessage.body) return; setIsSubmitting(true); const meta = import.meta as any; const WORKER_URL = (meta.env && meta.env.VITE_WORKER_URL) || (typeof window !== 'undefined' && (window as any).ENV && (window as any).ENV.VITE_WORKER_URL) || '/api'; try { await fetch(`${WORKER_URL}/admin/push`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('CHIACHIA_TOKEN')}` }, body: JSON.stringify({ title: pushMessage.title || '', body: pushMessage.body, url: pushMessage.url, target_role: 'all' }) }); alert(`成功發送`); setPushMessage({ title: '', body: '', url: '/' }); } catch (e) { alert('發送失敗'); } finally { setIsSubmitting(false); } };
   const handleSelectPerson = (person: LookupItem) => { setSelectedPerson(person); setStep('password'); setErrorMsg(''); setLoginPass(''); };
   
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [adminView, ticketView, courseCategory]);
+
   const handleLogin = async () => { 
       if (!selectedPerson) return; 
       setIsLoggingIn(true); 
@@ -524,7 +547,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const handleSaveConfig = async (type: 'training'|'series') => { if(!formData.name) return; setIsSubmitting(true); let res = false; const action = isEditMode ? 'update' : 'create'; const payload = isEditMode ? { id: formData.id, [type === 'training' ? 'type_name' : 'series_name']: formData.name, is_default: formData.is_default } : { [type === 'training' ? 'type_name' : 'series_name']: formData.name, is_default: formData.is_default }; if(type === 'training') res = await api.manageTrainingType(action, payload); if(type === 'series') res = await api.manageRaceSeries(action, payload); if(res) { await refreshData(); setShowModal(false); } setIsSubmitting(false); };
   const handleDeleteConfig = (type: 'training'|'series', id: string|number) => { setConfirmModal({ show: true, title: "確認刪除", message: "確定要刪除此項目嗎？", onConfirm: async () => { let res = false; if(type === 'training') res = await api.manageTrainingType('delete', { id }); if(type === 'series') res = await api.manageRaceSeries('delete', { id }); if(res) { await refreshData(); setShowModal(false); } setConfirmModal(null); } }); };
   const handleAddPerson = async () => { if(!formData.name) return; setIsSubmitting(true); const res = await api.createPerson(formData.name, formData.full_name || formData.name, 'parent', formData.birthday, formData.roles || [ROLES.RIDER]); if(res) { await refreshData(); setShowModal(false); } setIsSubmitting(false); };
-  const handleEditPerson = async () => { if(!formData.id || !formData.name) return; setIsSubmitting(true); const res = await api.manageLookup('people', formData.name, formData.id, false, formData.is_hidden, { birthday: formData.birthday, full_name: formData.full_name, roles: formData.roles }); if(res) { await refreshData(); setShowModal(false); } setIsSubmitting(false); };
+  const handleEditPerson = async () => { if(!formData.id || !formData.name) return; setIsSubmitting(true); const res = await api.manageLookup('people', formData.name, formData.id, false, formData.is_hidden, { birthday: formData.birthday, full_name: formData.full_name, roles: formData.roles }); if(res) { if (user && String(formData.id) === String(user.id)) { const newUser = { ...user, name: formData.name, birthday: formData.birthday, full_name: formData.full_name, roles: formData.roles, is_hidden: formData.is_hidden }; setUser(newUser); localStorage.setItem('CHIACHIA_USER', JSON.stringify(newUser)); } await refreshData(); setShowModal(false); } setIsSubmitting(false); };
   
   // Updated: Changed default reset password to 123456
   const handleResetPassword = () => { 
@@ -619,27 +642,21 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   };
   const handleToggleRole = (role: string) => { setFormData((prev: any) => { const currentRoles = prev.roles || []; if (currentRoles.includes(role)) { return { ...prev, roles: currentRoles.filter((r: string) => r !== role) }; } else { return { ...prev, roles: [...currentRoles, role] }; } }); };
 
-  // ... (Header component and other helpers remain same) ...
-  const Header = ({ title, onAdd, onBack }: { title: string, onAdd?: () => void, onBack?: () => void }) => (
-      <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (onBack) onBack(); else setAdminView('menu'); }} className="w-14 h-14 rounded-xl bg-zinc-900 flex items-center justify-center text-zinc-400 active:bg-zinc-800 active:scale-95 transition-all cursor-pointer z-50 touch-manipulation border border-white/5"> <ArrowLeft size={24}/> </button>
-            <h2 className="text-2xl font-black text-white italic">{title}</h2>
-          </div>
-          {onAdd && ( <button onClick={onAdd} className="w-14 h-14 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green active:scale-90 transition-transform"> <Plus size={24} strokeWidth={3} /> </button> )}
-      </div>
-  );
+
 
   // ... (Keep existing admin sub-views) ...
   // ... (When adminView is 'menu', render cards) ...
 
   // ... (Keep existing user profile render logic) ...
   if (user) {
-      if (adminView !== 'menu') {
+      const myWallet = wallets.find(w => String(w.people_id) === String(user.id));
+    const renderContent = () => {
+        const days = ['週日','週一','週二','週三','週四','週五','週六'];
+        if (adminView !== 'menu') {
           // ... (Existing admin views) ...
           if(adminView === 'push_system') {
               // ... (Push system implementation) ...
-              if (pushView === 'menu') { return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="推播系統" /> </div> <div className="px-4 py-4 pb-28"> <div className="grid grid-cols-2 gap-3"> <MenuCard title="教練公告" icon={<Megaphone/>} onClick={() => setPushView('announcement')} /> <MenuCard title="課程公告" icon={<CalendarDays/>} onClick={() => setPushView('course_automation')} /> <MenuCard title="賽事公告" icon={<Trophy/>} onClick={() => setPushView('race_automation')} /> <MenuCard title="數據公告" icon={<Activity/>} onClick={() => setPushView('data_automation')} /> <MenuCard title="分享設定" icon={<Share2/>} onClick={() => setPushView('share_config')} description="設定分享結尾文字" /> </div> </div> </> ); }
+              if (pushView === 'menu') { return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="推播系統" onBack={() => setAdminView('menu')} /> </div> <div className="px-4 py-4 pb-28"> <div className="grid grid-cols-2 gap-3"> <MenuCard title="教練公告" icon={<Megaphone/>} onClick={() => setPushView('announcement')} /> <MenuCard title="課程公告" icon={<CalendarDays/>} onClick={() => setPushView('course_automation')} /> <MenuCard title="賽事公告" icon={<Trophy/>} onClick={() => setPushView('race_automation')} /> <MenuCard title="數據公告" icon={<Activity/>} onClick={() => setPushView('data_automation')} /> <MenuCard title="分享設定" icon={<Share2/>} onClick={() => setPushView('share_config')} description="設定分享結尾文字" /> </div> </div> </> ); }
               // ... (Other push views omitted for brevity, but exist in original code) ...
               // [Rest of Push System Code...]
               if (pushView === 'announcement') { return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="教練公告" onBack={() => setPushView('menu')} /> </div> <div className="px-4 py-4 pb-28 space-y-6"> <div className="glass-card p-6 rounded-3xl space-y-4"> <div className="flex items-center gap-3 mb-2"> <div className="w-10 h-10 rounded-full bg-chiachia-green/10 flex items-center justify-center text-chiachia-green"> <Megaphone size={20} /> </div> <div> <h3 className="text-lg font-black text-white italic">即時推播</h3> <p className="text-[10px] text-zinc-500 font-bold">發送給所有訂閱者</p> </div> </div> <div className="space-y-3"> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">標題 (留空則隱藏)</label> <input type="text" value={pushMessage.title} onChange={e => setPushMessage({...pushMessage, title: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-base" placeholder="標題"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">內容</label> <textarea rows={5} value={pushMessage.body} onChange={e => setPushMessage({...pushMessage, body: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-base" placeholder="輸入公告內容..."/> </div> <button onClick={handleSendBroadcast} disabled={isSubmitting || !pushMessage.body} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2"> {isSubmitting ? <Loader2 size={18} className="animate-spin"/> : <Send size={18} />} {isSubmitting ? '發送中...' : '發送推播'} </button> </div> </div> </div> </> ); }
@@ -709,7 +726,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
               return ( 
                 <> 
                     <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> 
-                        <Header title="人員管理" onAdd={() => { setFormData({ roles: [ROLES.RIDER] }); setIsEditMode(false); setModalType('player'); setShowModal(true); }} /> 
+                        <Header title="人員管理" onBack={() => setAdminView('menu')} onAdd={() => { setFormData({ roles: [ROLES.RIDER] }); setIsEditMode(false); setModalType('player'); setShowModal(true); }} /> 
                     </div> 
                     <div className="px-4 py-4 pb-28"> 
                         <div className="grid grid-cols-3 gap-3"> 
@@ -725,88 +742,25 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                             ))} 
                         </div> 
                     </div> 
-                    
-                    {/* PLAYER MANAGEMENT MODAL */}
-                    {showModal && modalType === 'player' && createPortal(
-                      <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md animate-fade-in pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
-                          <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
-                              <div className="flex items-center border-b border-white/5 pb-4 gap-3">
-                                  <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button>
-                                  <h3 className="text-xl font-black text-white italic">{isEditMode ? '編輯選手' : '新增選手'}</h3>
-                              </div>
-                              <div className="space-y-4">
-                                  <div className="space-y-1">
-                                      <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">暱稱 (登入名稱)</label>
-                                      <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold" placeholder="例如: 小明"/>
-                                  </div>
-                                  <div className="space-y-1">
-                                      <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">全名 (真實姓名)</label>
-                                      <input type="text" value={formData.full_name || ''} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50" placeholder="例如: 王小明"/>
-                                  </div>
-                                  <div className="space-y-1">
-                                      <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">生日</label>
-                                      <input type="date" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} className="w-full h-[50px] bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/>
-                                  </div>
-                                  <div className="space-y-1">
-                                      <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">角色權限</label>
-                                      <div className="flex flex-wrap gap-2">
-                                          {[ROLES.RIDER, ROLES.AIDE, ROLES.COACH].map(role => (
-                                              <button key={role} onClick={() => handleToggleRole(role)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${formData.roles?.includes(role) ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>
-                                                  {role}
-                                              </button>
-                                          ))}
-                                      </div>
-                                  </div>
-                                  {isEditMode && (
-                                      <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-xl border border-white/5">
-                                          <div className="flex items-center gap-2">
-                                              <div className={`w-2 h-2 rounded-full ${formData.is_hidden ? 'bg-zinc-600' : 'bg-chiachia-green'}`}></div>
-                                              <span className="text-xs font-bold text-zinc-300">{formData.is_hidden ? '已隱藏 (退休)' : '顯示中 (在役)'}</span>
-                                          </div>
-                                          <button onClick={() => setFormData({...formData, is_hidden: !formData.is_hidden})} className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase border ${formData.is_hidden ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-800 border-white/10 text-zinc-500'}`}>
-                                              {formData.is_hidden ? '恢復顯示' : '隱藏選手'}
-                                          </button>
-                                      </div>
-                                  )}
-                                  
-                                  {isEditMode && (
-                                      <div className="pt-2 border-t border-white/5">
-                                          <button onClick={handleResetPassword} className="w-full py-3 bg-zinc-900 text-zinc-400 font-bold rounded-xl border border-white/10 active:scale-95 transition-all flex items-center justify-center gap-2 text-xs">
-                                              {resetStatus === 'success' ? <CheckCircle2 size={14} className="text-chiachia-green" /> : <RotateCcw size={14} />}
-                                              {resetStatus === 'success' ? '密碼已重設為 123456' : resetStatus === 'error' ? '重設失敗' : '重設密碼為 123456'}
-                                          </button>
-                                      </div>
-                                  )}
-
-                                  <button onClick={isEditMode ? handleEditPerson : handleAddPerson} disabled={isSubmitting || !formData.name} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2">
-                                      {isSubmitting && <Loader2 size={18} className="animate-spin" />}
-                                      {isSubmitting ? '處理中...' : (isEditMode ? '儲存變更' : '確認新增')}
-                                  </button>
-                              </div>
-                          </div>
-                      </div>,
-                      document.body
-                    )}
                 </> 
               ); 
           }
           
-          if(adminView === 'tickets') { 
-              // ... (Same ticket logic) ...
-              if (ticketView === 'menu') {
+          if(adminView === 'course_ticket') {
+              if (ticketView === 'menu' && !courseCategory) {
                   return (
                       <>
                           <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5">
-                              <Header title="票卷管理" />
+                              <Header title="課程票務系統" onBack={() => setAdminView('menu')} />
                           </div>
                           <div className="px-4 py-4 pb-28 space-y-4">
-                              <div className={`p-4 rounded-2xl border transition-all flex items-center justify-between ${courseSystemEnabled ? 'bg-chiachia-green/5 border-chiachia-green/20' : 'bg-rose-500/5 border-rose-500/20'}`}>
+                              <div className={`p-4 rounded-2xl border transition-all flex items-center justify-between ${courseSystemEnabled ? 'bg-zinc-900/40 border-white/5' : 'bg-rose-500/10 border-rose-500/20'}`}>
                                   <div className="flex items-center gap-3">
-                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${courseSystemEnabled ? 'bg-chiachia-green/10 text-chiachia-green' : 'bg-rose-500/10 text-rose-500'}`}>
+                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${courseSystemEnabled ? 'bg-zinc-800 text-zinc-400' : 'bg-rose-500 text-white'}`}>
                                           {courseSystemEnabled ? <CheckCircle2 size={20}/> : <Lock size={20}/>}
                                       </div>
                                       <div>
-                                          <h3 className="text-base font-black text-white italic">課程和票卷狀態</h3>
+                                          <h3 className="text-base font-black text-white italic">系統狀態</h3>
                                           <p className="text-[10px] text-zinc-500 font-bold">{courseSystemEnabled ? '已開啟 (正常運作)' : '已關閉 (暫停操作)'}</p>
                                       </div>
                                   </div>
@@ -816,6 +770,8 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                   </button>
                               </div>
                               <div className="grid grid-cols-2 gap-3">
+                                  <MenuCard title="例行課程" description="自動排課" icon={<Repeat/>} onClick={() => setCourseCategory('ROUTINE')} disabled={!courseSystemEnabled} />
+                                  <MenuCard title="專訓課程" description="強化訓練" icon={<Star/>} onClick={() => setCourseCategory('SPECIAL')} disabled={!courseSystemEnabled} />
                                   <MenuCard title="庫存" icon={<InventoryIcon/>} onClick={() => setTicketView('inventory')} description="錢包與儲值" disabled={!courseSystemEnabled} />
                                   <MenuCard title="定價" icon={<Tag/>} onClick={() => setTicketView('pricing')} description="票價與規則" disabled={!courseSystemEnabled} />
                                   <MenuCard title="帳務" icon={<FileBarChart/>} onClick={() => { loadFinancialReport(); setTicketView('report'); }} description="財務報表" disabled={!courseSystemEnabled} />
@@ -824,11 +780,16 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                       </>
                   );
               }
+          }
+
+          if(adminView === 'tickets' || (adminView === 'course_ticket' && ticketView !== 'menu')) { 
+              // ... (Same ticket logic) ...
+
               // ... (Other ticket views omitted for brevity, logic preserved) ...
               if (ticketView === 'inventory') {
-                  const riderWallets = wallets.filter(w => {
-                      const p = people.find((p:any) => String(p.id) === String(w.people_id));
-                      return p && p.roles && p.roles.includes('RIDER');
+                  const riderWallets = people.filter(p => p.roles && p.roles.includes('RIDER') && !p.roles.includes('DEV')).sort(sortRiders).map(p => {
+                      const wallet = wallets.find(w => String(w.people_id) === String(p.id));
+                      return wallet || { people_id: p.id, person_name: p.name, regular_balance: 0, racing_balance: 0, batches: [] };
                   });
                   return ( 
                     <> 
@@ -837,7 +798,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                         </div> 
                         <div className="px-4 py-4 pb-28 space-y-6"> 
                             {ticketRequests.length > 0 && (
-                                <div className="space-y-2 animate-fade-in">
+                                <div className="space-y-2 animate-pulse-glow">
                                     <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-2">待處理請求</div>
                                     {ticketRequests.map(req => (
                                         <div key={req.id} className="p-4 bg-zinc-900/50 rounded-2xl border border-amber-500/30 flex items-center justify-between shadow-[0_0_15px_rgba(245,158,11,0.1)]">
@@ -883,7 +844,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                                 </div>
                                             </div>
                                             {isExpanded && (
-                                                <div className="border-t border-white/5 bg-black/20 p-4 space-y-2 animate-slide-down">
+                                                <div className="border-t border-white/5 bg-black/20 p-4 space-y-2">
                                                     <div className="flex justify-between items-center mb-2">
                                                         <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Ticket Batches</div>
                                                         <button onClick={() => { setSelectedHistoryPerson(person || null); loadFinancialHistory(w.people_id); setModalType('history'); setShowModal(true); }} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-white"> <History size={12} /> 查看紀錄 </button>
@@ -914,7 +875,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                        <Header title="定價設定" onBack={() => setTicketView('menu')} />
                     </div>
                     <div className="px-4 py-4 pb-28">
-                       <div className="glass-card w-full rounded-3xl p-6 border-white/10 flex flex-col gap-4 animate-scale-in">
+                       <div className="glass-card w-full rounded-3xl p-6 border-white/10 flex flex-col gap-4">
                            <div className="space-y-4">
                                <div className="space-y-1">
                                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">一般課程 (每張)</label>
@@ -986,7 +947,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                                          ))}
                                                      </div>
                                                      {reportDateRange === 'CUSTOM' && (
-                                                         <div className="flex gap-2 animate-fade-in">
+                                                         <div className="flex gap-2">
                                                              <input type="date" value={customDateStart} onChange={e => setCustomDateStart(e.target.value)} className="bg-zinc-900 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white outline-none"/>
                                                              <span className="text-zinc-500">-</span>
                                                              <input type="date" value={customDateEnd} onChange={e => setCustomDateEnd(e.target.value)} className="bg-zinc-900 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white outline-none"/>
@@ -1019,16 +980,15 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
               }
           }
           
-          if(adminView === 'courses') { /*... (same logic as previous file) ...*/ const days = ['週日','週一','週二','週三','週四','週五','週六']; if (!courseCategory) { return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="排課系統" /> </div> <div className="px-4 py-4 pb-28 space-y-4"> <div className={`p-4 rounded-2xl border transition-all flex items-center justify-between ${courseSystemEnabled ? 'bg-chiachia-green/5 border-chiachia-green/20' : 'bg-rose-500/5 border-rose-500/20'}`}> <div className="flex items-center gap-3"> <div className={`w-10 h-10 rounded-full flex items-center justify-center ${courseSystemEnabled ? 'bg-chiachia-green/10 text-chiachia-green' : 'bg-rose-500/10 text-rose-500'}`}> {courseSystemEnabled ? <CheckCircle2 size={20}/> : <Lock size={20}/>} </div> <div> <h3 className="text-base font-black text-white italic">課程和票卷狀態</h3> <p className="text-[10px] text-zinc-500 font-bold">{courseSystemEnabled ? '已開啟 (正常運作)' : '已關閉 (暫停操作)'}</p> </div> </div> <button onClick={handleToggleCourseSystem} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${courseSystemEnabled ? 'bg-chiachia-green text-black border-chiachia-green' : 'bg-zinc-800 text-zinc-500 border-white/10'}`}> {courseSystemEnabled ? <ToggleRight size={24}/> : <ToggleLeft size={24}/>} <span className="text-[10px] font-black uppercase">{courseSystemEnabled ? 'OPEN' : 'CLOSED'}</span> </button> </div> <div className="grid grid-cols-2 gap-3"> <MenuCard title="例行課程" description="自動排課" icon={<Repeat/>} onClick={() => setCourseCategory('ROUTINE')} disabled={!courseSystemEnabled} /> <MenuCard title="專訓課程" description="強化訓練" icon={<Star/>} onClick={() => setCourseCategory('SPECIAL')} disabled={!courseSystemEnabled} /> </div> </div> </> ); } let displayItems: any[] = []; let categoryTitle = ""; let themeClass = ""; if (courseCategory === 'ROUTINE') { categoryTitle = "例行課程"; themeClass = "bg-zinc-900 border-chiachia-green/30 hover:border-chiachia-green/50"; displayItems = templates.filter(t => t.category === 'ROUTINE' || (!t.category && t.is_auto_scheduled)); } else { categoryTitle = "專訓課程"; themeClass = "bg-zinc-900/40 border border-chiachia-green/50 text-chiachia-green shadow-[0_0_10px_rgba(57,231,95,0.2)]"; displayItems = sessions.filter(s => s.category === 'SPECIAL'); } const getPriceDisplay = (item: any) => { if (item.ticket_type === 'GROUP_PRACTICE') return '團滑'; if (item.ticket_type === 'NONE') { if (item.price && item.price > 0) { return `單次 $${item.price}`; } if (ticketPrices.special_tiers && ticketPrices.special_tiers.length > 0) { const minPrice = Math.min(...ticketPrices.special_tiers.map(t => t.price)); const maxPrice = Math.max(...ticketPrices.special_tiers.map(t => t.price)); return ( <div className="flex flex-col"> <span className="font-bold">動態定價</span> <span className="text-[9px] text-zinc-400 font-mono">${minPrice} ~ ${maxPrice}</span> </div> ); } return `單次 $${item.price || 0}`; } return item.ticket_type || '一般'; }; return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title={categoryTitle} onBack={() => setCourseCategory(null)} onAdd={() => { setFormData({ day_of_week: 5, start_time: '19:30', end_time: '21:00', max_students: 20, ticket_type: 'REGULAR', price: 0, location: '萬善同停車場', default_student_ids: [], category: courseCategory, date: format(new Date(), 'yyyy-MM-dd') }); setIsTemplateMode(courseCategory === 'ROUTINE'); setModalType('course_config'); setIsEditMode(false); setShowModal(true); }} /> </div> <div className="px-4 py-4 pb-28"> <div className="space-y-3"> {displayItems.length > 0 ? displayItems.map((item) => ( <div key={item.id} onClick={() => { if (courseCategory === 'ROUTINE') handleEditTemplate(item); if (courseCategory === 'SPECIAL') handleEditSession(item); }} className={`p-4 rounded-2xl relative border transition-all active:scale-[0.98] group ${themeClass}`}> <div className="flex justify-between items-start mb-2"> <div className="flex items-center gap-2"> {courseCategory === 'ROUTINE' ? ( <div className="text-xs font-black text-zinc-400 bg-black/30 px-2 py-0.5 rounded uppercase tracking-wider border border-white/5">{days[item.day_of_week]} {item.start_time}</div> ) : ( <div className="text-xs font-black text-white bg-black/30 px-2 py-0.5 rounded uppercase tracking-wider border border-white/5">{item.date} {item.start_time}</div> )} {item.is_auto_scheduled && <div className="text-[9px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded font-black uppercase border border-blue-500/30">Auto</div>} </div> {courseCategory === 'ROUTINE' && ( <div className="flex items-center gap-1"> <button onClick={(e) => { e.stopPropagation(); handleManualCreateSession(item); }} className="p-1.5 bg-chiachia-green text-black rounded-lg hover:bg-white transition-colors shadow-glow-green"><Play size={14} fill="black"/></button> <button onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(item.id!); }} className="text-zinc-600 hover:text-rose-500 p-1 transition-colors"><Trash2 size={16}/></button> </div> )} </div> <h3 className={`text-xl font-black italic ${courseCategory === 'SPECIAL' ? 'text-chiachia-green drop-shadow-sm' : 'text-white'}`}>{item.name}</h3> <div className="grid grid-cols-2 gap-2 mt-3"> <div className="flex items-center gap-1 text-xs text-zinc-400 font-bold"><MapPin size={14} className="text-zinc-500"/> {item.location}</div> <div className="flex items-center gap-1 text-xs text-zinc-400 font-bold"> <Ticket size={14} className="text-zinc-500"/> {item.category === 'SPECIAL' ? getPriceDisplay(item) : (item.ticket_type === 'NONE' ? '單次結算' : item.ticket_type || '一般')} </div> <div className="flex items-center gap-1 text-xs text-zinc-400 font-bold"><Users size={14} className="text-zinc-500"/> Max {item.max_students || item.capacity}</div> </div> {courseCategory === 'ROUTINE' && item.default_student_ids && JSON.parse(item.default_student_ids as any).length > 0 && ( <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2"> <span className="text-[9px] text-zinc-500 font-bold">固定班底:</span> <div className="flex -space-x-1.5"> {JSON.parse(item.default_student_ids as any).slice(0, 5).map((pid: string) => { const p = people.find((pp:any) => String(pp.id) === String(pid)); if(!p) return null; return <div key={pid} className="w-5 h-5 rounded-full border border-black overflow-hidden">{p.s_url && <img src={p.s_url} className="w-full h-full object-cover"/>}</div> })} {JSON.parse(item.default_student_ids as any).length > 5 && <div className="w-5 h-5 rounded-full bg-zinc-800 border border-black flex items-center justify-center text-[8px] text-zinc-400">+{JSON.parse(item.default_student_ids as any).length-5}</div>} </div> </div> )} </div> )) : ( <div className="py-20 text-center flex flex-col items-center gap-2 opacity-50"> <Layers size={40} className="text-zinc-600"/> <span className="text-xs font-black text-zinc-500 uppercase tracking-widest">尚無{categoryTitle}</span> </div> )} </div> </div> {feedbackMsg && ( <div className="fixed inset-0 z-[70000] flex items-center justify-center pointer-events-none"> <div className="bg-black/90 backdrop-blur-md px-6 py-4 rounded-2xl border border-chiachia-green/30 shadow-[0_0_30px_rgba(57,231,95,0.2)] flex flex-col items-center gap-2 animate-scale-in"> <CheckCircle2 size={32} className="text-chiachia-green" /> <span className="text-sm font-black text-white italic">{feedbackMsg}</span> </div> </div> )} </> ); }
-          if(adminView === 'training' || adminView === 'series') { const isTraining = adminView === 'training'; const items = isTraining ? trainingTypes : raceGroups; return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title={isTraining ? "訓練項目" : "賽事系列"} onAdd={() => { setFormData({}); setIsEditMode(false); setModalType('config'); setShowModal(true); }} /> </div> <div className="px-4 py-4 pb-28"> <div className="space-y-2"> {items.map((it: any) => ( <div key={it.id} className="glass-card p-4 rounded-2xl flex justify-between items-center"> <span className={`text-white font-bold ${it.is_default && isTraining ? 'text-chiachia-green font-black drop-shadow-glow' : ''}`}> {isTraining ? it.type_name : it.series_name} {!!it.is_default && isTraining && <span className="ml-2 text-[8px] bg-chiachia-green text-black px-1 py-0.5 rounded uppercase">Default</span>} </span> <button onClick={() => { setFormData({ id: it.id, name: isTraining ? it.type_name : it.series_name, is_default: it.is_default }); setIsEditMode(true); setModalType('config'); setShowModal(true); }} className="p-2 bg-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-colors border border-white/5 active:scale-95"> <Edit2 size={16}/> </button> </div> ))} </div> </div> </> ); }
+          if(adminView === 'courses' || (adminView === 'course_ticket' && courseCategory)) { let displayItems: any[] = []; let categoryTitle = ""; let themeClass = ""; if (courseCategory === 'ROUTINE') { categoryTitle = "例行課程"; themeClass = "bg-zinc-900 border-chiachia-green/30 hover:border-chiachia-green/50"; displayItems = templates.filter(t => t.category === 'ROUTINE' || (!t.category && t.is_auto_scheduled)); } else if (courseCategory === 'SPECIAL') { categoryTitle = "專訓課程"; themeClass = "bg-zinc-900/40 border border-chiachia-green/50 text-chiachia-green shadow-[0_0_10px_rgba(57,231,95,0.2)]"; displayItems = sessions.filter(s => s.category === 'SPECIAL'); } const getPriceDisplay = (item: any) => { if (item.ticket_type === 'GROUP_PRACTICE') return '團滑'; if (item.ticket_type === 'NONE') { if (item.price && item.price > 0) { return `單次 $${item.price}`; } if (ticketPrices.special_tiers && ticketPrices.special_tiers.length > 0) { const minPrice = Math.min(...ticketPrices.special_tiers.map(t => t.price)); const maxPrice = Math.max(...ticketPrices.special_tiers.map(t => t.price)); return ( <div className="flex flex-col"> <span className="font-bold">動態定價</span> <span className="text-[9px] text-zinc-400 font-mono">${minPrice} ~ ${maxPrice}</span> </div> ); } return `單次 $${item.price || 0}`; } return item.ticket_type || '一般'; }; return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title={categoryTitle} onBack={() => setCourseCategory(null)} onAdd={() => { setFormData({ day_of_week: 5, start_time: '19:30', end_time: '21:00', max_students: 20, ticket_type: 'REGULAR', price: 0, location: '萬善同停車場', default_student_ids: [], category: courseCategory, date: format(new Date(), 'yyyy-MM-dd') }); setIsTemplateMode(courseCategory === 'ROUTINE'); setModalType('course_config'); setIsEditMode(false); setShowModal(true); }} /> </div> <div className="px-4 py-4 pb-28"> <div className="space-y-3"> {displayItems.length > 0 ? displayItems.map((item) => ( <div key={item.id} onClick={() => { if (courseCategory === 'ROUTINE') handleEditTemplate(item); if (courseCategory === 'SPECIAL') handleEditSession(item); }} className={`p-4 rounded-2xl relative border transition-all active:scale-[0.98] group ${themeClass}`}> <div className="flex justify-between items-start mb-2"> <div className="flex items-center gap-2"> {courseCategory === 'ROUTINE' ? ( <div className="text-xs font-black text-zinc-400 bg-black/30 px-2 py-0.5 rounded uppercase tracking-wider border border-white/5">{days[item.day_of_week]} {item.start_time}</div> ) : ( <div className="text-xs font-black text-white bg-black/30 px-2 py-0.5 rounded uppercase tracking-wider border border-white/5">{item.date} {item.start_time}</div> )} {item.is_auto_scheduled && <div className="text-[9px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded font-black uppercase border border-blue-500/30">Auto</div>} </div> {courseCategory === 'ROUTINE' && ( <div className="flex items-center gap-1"> <button onClick={(e) => { e.stopPropagation(); handleManualCreateSession(item); }} className="p-1.5 bg-chiachia-green text-black rounded-lg hover:bg-white transition-colors shadow-glow-green"><Play size={14} fill="black"/></button> <button onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(item.id!); }} className="text-zinc-600 hover:text-rose-500 p-1 transition-colors"><Trash2 size={16}/></button> </div> )} </div> <h3 className={`text-xl font-black italic ${courseCategory === 'SPECIAL' ? 'text-chiachia-green drop-shadow-sm' : 'text-white'}`}>{item.name}</h3> <div className="grid grid-cols-2 gap-2 mt-3"> <div className="flex items-center gap-1 text-xs text-zinc-400 font-bold"><MapPin size={14} className="text-zinc-500"/> {item.location}</div> <div className="flex items-center gap-1 text-xs text-zinc-400 font-bold"> <Ticket size={14} className="text-zinc-500"/> {item.category === 'SPECIAL' ? getPriceDisplay(item) : (item.ticket_type === 'NONE' ? '單次結算' : item.ticket_type || '一般')} </div> <div className="flex items-center gap-1 text-xs text-zinc-400 font-bold"><Users size={14} className="text-zinc-500"/> Max {item.max_students || item.capacity}</div> </div> {courseCategory === 'ROUTINE' && item.default_student_ids && JSON.parse(item.default_student_ids as any).length > 0 && ( <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2"> <span className="text-[9px] text-zinc-500 font-bold">固定班底:</span> <div className="flex -space-x-1.5"> {JSON.parse(item.default_student_ids as any).slice(0, 5).map((pid: string) => { const p = people.find((pp:any) => String(pp.id) === String(pid)); if(!p) return null; return <div key={pid} className="w-5 h-5 rounded-full border border-black overflow-hidden">{p.s_url && <img src={p.s_url} className="w-full h-full object-cover"/>}</div> })} {JSON.parse(item.default_student_ids as any).length > 5 && <div className="w-5 h-5 rounded-full bg-zinc-800 border border-black flex items-center justify-center text-[8px] text-zinc-400">+{JSON.parse(item.default_student_ids as any).length-5}</div>} </div> </div> )} </div> )) : ( <div className="py-20 text-center flex flex-col items-center gap-2 opacity-50"> <Layers size={40} className="text-zinc-600"/> <span className="text-xs font-black text-zinc-500 uppercase tracking-widest">尚無{categoryTitle}</span> </div> )} </div> </div> {feedbackMsg && ( <div className="fixed inset-0 z-[70000] flex items-center justify-center pointer-events-none"> <div className="bg-black/90 backdrop-blur-md px-6 py-4 rounded-2xl border border-chiachia-green/30 shadow-[0_0_30px_rgba(57,231,95,0.2)] flex flex-col items-center gap-2 animate-scale-in"> <CheckCircle2 size={32} className="text-chiachia-green" /> <span className="text-sm font-black text-white italic">{feedbackMsg}</span> </div> </div> )} </> ); }
+          if(adminView === 'training' || adminView === 'series') { const isTraining = adminView === 'training'; const items = isTraining ? trainingTypes : raceGroups; return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title={isTraining ? "訓練項目" : "賽事系列"} onBack={() => setAdminView('menu')} onAdd={() => { setFormData({}); setIsEditMode(false); setModalType('config'); setShowModal(true); }} /> </div> <div className="px-4 py-4 pb-28"> <div className="space-y-2"> {(items || []).map((it: any) => ( <div key={it.id} className="glass-card p-4 rounded-2xl flex justify-between items-center"> <span className={`text-white font-bold ${it.is_default && isTraining ? 'text-chiachia-green font-black drop-shadow-glow' : ''}`}> {isTraining ? it.type_name : it.series_name} {!!it.is_default && isTraining && <span className="ml-2 text-[8px] bg-chiachia-green text-black px-1 py-0.5 rounded uppercase">Default</span>} </span> <button onClick={() => { setFormData({ id: it.id, name: isTraining ? it.type_name : it.series_name, is_default: it.is_default }); setIsEditMode(true); setModalType('config'); setShowModal(true); }} className="p-2 bg-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-colors border border-white/5 active:scale-95"> <Edit2 size={16}/> </button> </div> ))} </div> </div> </> ); }
           return null;
       } else {
           // ... (Keep existing user profile render) ...
           const age = user.birthday ? differenceInYears(new Date(), new Date(user.birthday)) : '--';
-          const myWallet = wallets.find(w => String(w.people_id) === String(user.id));
           return ( 
              <> 
-                <div className="h-full bg-black animate-fade-in overflow-y-auto no-scrollbar pb-40 relative"> 
+                <div className="h-full bg-black overflow-y-auto no-scrollbar pb-40 relative"> 
                     <div className="relative w-full h-[55vh] shrink-0"> {user.b_url ? ( <img src={user.b_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <div className="w-full h-full flex flex-col items-center justify-center text-zinc-600 bg-zinc-900 gap-2"> <Camera size={32} /> <span className="text-xs font-black uppercase tracking-widest">No Cover Photo</span> </div> )} <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black via-black/60 to-transparent"></div> <div className="absolute bottom-6 left-6 flex items-end gap-4 w-full pr-6 z-20"> 
                         <Avatar p={user} size="2xl" />
                         <div className="flex-1 min-w-0 pb-2"> <h2 className="text-3xl font-black text-white italic tracking-tight drop-shadow-lg truncate">{user.name}</h2> <p className="text-sm font-bold text-zinc-300 drop-shadow-md truncate">{user.full_name}</p> </div> </div> </div> 
@@ -1041,21 +1001,28 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                             <MenuCard title="修改密碼" icon={<LockKeyhole/>} onClick={() => { setFormData({}); setPasswordError(''); setModalType('change_password'); setShowModal(true); }} /> 
                             <MenuCard title="推播通知" icon={<BellRing/>} onClick={() => { setModalType('settings_menu'); setShowModal(true); }} />
                             <MenuCard title="使用說明書" icon={<BookOpen/>} onClick={() => { setModalType('manual'); setShowModal(true); }} />
-                            {hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) && <MenuCard title="人員管理" icon={<User/>} onClick={() => setAdminView('players')} />}
-                            {hasPermission(user, PERMISSIONS.TICKET_MANAGE) && <MenuCard title="票卷管理" icon={<Wallet/>} onClick={() => setAdminView('tickets')} />}
-                            {(hasPermission(user, PERMISSIONS.COURSE_EDIT) || hasPermission(user, PERMISSIONS.COURSE_VIEW_ALL)) && <MenuCard title="排課系統" icon={<LayoutGrid/>} onClick={() => { setAdminView('courses'); setCourseCategory(null); }} />}
-                            {hasPermission(user, PERMISSIONS.CONFIG_MANAGE) && <MenuCard title="訓練項目" icon={<Activity/>} onClick={() => setAdminView('training')} />}
-                            {hasPermission(user, PERMISSIONS.CONFIG_MANAGE) && <MenuCard title="賽事系列" icon={<Flag/>} onClick={() => setAdminView('series')} />}
-                            {hasPermission(user, PERMISSIONS.PUSH_MANAGE) && <MenuCard title="推播系統" icon={<Radio/>} onClick={() => { setAdminView('push_system'); setPushView('menu'); }} />}
+                            {(hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="人員管理" icon={<User/>} onClick={() => setAdminView('players')} />}
+                            {(hasPermission(user, PERMISSIONS.COURSE_EDIT) || hasPermission(user, PERMISSIONS.TICKET_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="課程票務系統" icon={<LayoutGrid/>} onClick={() => { setAdminView('course_ticket'); setCourseCategory(null); setTicketView('menu'); }} />}
+                            {(hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="訓練項目" icon={<Activity/>} onClick={() => setAdminView('training')} />}
+                            {(hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="賽事系列" icon={<Flag/>} onClick={() => setAdminView('series')} />}
+                            {(hasPermission(user, PERMISSIONS.PUSH_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="推播系統" icon={<Radio/>} onClick={() => { setAdminView('push_system'); setPushView('menu'); }} />}
                             <MenuCard title="登出帳號" icon={<LogOut/>} onClick={handleLogout} variant="danger" /> 
                         </div> 
                     </div> 
                 </div> 
-                
-                  {/* CONFIRM MODAL */}
+              </>
+           );
+        }
+        return null;
+    };
+
+    return (
+        <>
+            {renderContent()}
+            {/* CONFIRM MODAL */}
                   {confirmModal && createPortal(
-                      <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in">
-                          <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center animate-scale-in">
+                      <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+                          <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center">
                               <h3 className="text-xl font-black text-white italic mb-2">{confirmModal.title}</h3>
                               <p className="text-zinc-400 text-sm font-bold mb-6">{confirmModal.message}</p>
                               <div className="grid grid-cols-2 gap-3">
@@ -1071,8 +1038,8 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                   
                   {/* REJECT MODAL */}
                   {rejectModal.show && createPortal(
-                      <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in">
-                          <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center animate-scale-in">
+                      <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+                          <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center">
                               <h3 className="text-xl font-black text-white italic mb-2">退回請求</h3>
                               <div className="space-y-3 mb-4">
                                   <textarea 
@@ -1095,12 +1062,12 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                   )}
 
                   {/* EDIT PROFILE MODAL */}
-                  {showModal && modalType === 'parent_edit' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md animate-fade-in pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">編輯檔案</h3> </div> <div className="space-y-4"> <div className="w-full"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 block">檔案照片預覽</label> <div className="relative w-full aspect-video rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden group"> {user?.b_url ? <img src={user.b_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center flex-col gap-2 text-zinc-600"><ImageIcon size={32}/><span className="text-[10px] font-bold">無封面</span></div>} <label htmlFor="upload-cover-edit" className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"> <Camera size={24} className="text-white drop-shadow-lg mb-1"/> <span className="text-[10px] text-white font-bold bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">更換封面</span> </label> <input type="file" accept="image/*" className="hidden" id="upload-cover-edit" onChange={(e) => handleFileSelect(e, 'b')} /> <div className="absolute bottom-3 left-3 w-20 h-20 rounded-3xl border-2 border-white bg-zinc-950 overflow-hidden shadow-lg z-20 group/avatar"> {user?.s_url ? <img src={user.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><UserCircle2 size={32}/></div>} <label htmlFor="upload-avatar-edit" className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer"> <Camera size={20} className="text-white drop-shadow-md"/> </label> <input type="file" accept="image/*" className="hidden" id="upload-avatar-edit" onChange={(e) => handleFileSelect(e, 's')} /> </div> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">暱稱 (顯示名稱)</label> <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">全名 (真實姓名)</label> <input type="text" value={formData.full_name || ''} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">生日</label> <input type="date" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">個人宣言</label> <textarea rows={3} value={formData.myword || ''} onChange={e => setFormData({...formData, myword: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-sm"/> </div> <button onClick={handleUpdateSelf} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} {isSubmitting ? '儲存中...' : '儲存變更'} </button> </div> </div> </div> , document.body)}
+                  {showModal && modalType === 'parent_edit' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">編輯檔案</h3> </div> <div className="space-y-4"> <div className="w-full"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 block">檔案照片預覽</label> <div className="relative w-full aspect-video rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden group"> {user?.b_url ? <img src={user.b_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center flex-col gap-2 text-zinc-600"><ImageIcon size={32}/><span className="text-[10px] font-bold">無封面</span></div>} <label htmlFor="upload-cover-edit" className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"> <Camera size={24} className="text-white drop-shadow-lg mb-1"/> <span className="text-[10px] text-white font-bold bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">更換封面</span> </label> <input type="file" accept="image/*" className="hidden" id="upload-cover-edit" onChange={(e) => handleFileSelect(e, 'b')} /> <div className="absolute bottom-3 left-3 w-20 h-20 rounded-3xl border-2 border-white bg-zinc-950 overflow-hidden shadow-lg z-20 group/avatar"> {user?.s_url ? <img src={user.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><UserCircle2 size={32}/></div>} <label htmlFor="upload-avatar-edit" className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer"> <Camera size={20} className="text-white drop-shadow-md"/> </label> <input type="file" accept="image/*" className="hidden" id="upload-avatar-edit" onChange={(e) => handleFileSelect(e, 's')} /> </div> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">暱稱 (顯示名稱)</label> <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">全名 (真實姓名)</label> <input type="text" value={formData.full_name || ''} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">生日</label> <input type="date" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">個人宣言</label> <textarea rows={3} value={formData.myword || ''} onChange={e => setFormData({...formData, myword: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-sm"/> </div> <button onClick={handleUpdateSelf} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} {isSubmitting ? '儲存中...' : '儲存變更'} </button> </div> </div> </div> , document.body)}
 
                   {/* PLAYER MANAGEMENT MODAL */}
                   {showModal && modalType === 'player' && createPortal(
-                    <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md animate-fade-in pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
-                        <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
+                    <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
+                        <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center border-b border-white/5 pb-4 gap-3">
                                 <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button>
                                 <h3 className="text-xl font-black text-white italic">{isEditMode ? '編輯選手' : '新增選手'}</h3>
@@ -1158,36 +1125,166 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                     </div>,
                     document.body
                   )}
+
+                  {/* CONFIG MODAL (Training Types / Race Series) */}
+                  {showModal && modalType === 'config' && createPortal(
+                    <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
+                        <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center border-b border-white/5 pb-4 gap-3">
+                                <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button>
+                                <h3 className="text-xl font-black text-white italic">{isEditMode ? '編輯項目' : '新增項目'}</h3>
+                            </div>
+                            <div className="space-y-4">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">名稱</label>
+                                    <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold" placeholder="輸入名稱..."/>
+                                </div>
+                                {adminView === 'training' && (
+                                    <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-xl border border-white/5">
+                                        <span className="text-xs font-bold text-zinc-300">設為預設項目</span>
+                                        <button onClick={() => setFormData({...formData, is_default: !formData.is_default})} className={`w-12 h-6 rounded-full transition-all relative ${formData.is_default ? 'bg-chiachia-green' : 'bg-zinc-800'}`}>
+                                            <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${formData.is_default ? 'left-7' : 'left-1'}`}></div>
+                                        </button>
+                                    </div>
+                                )}
+                                <div className="flex gap-3 mt-2">
+                                    {isEditMode && (
+                                        <button onClick={() => handleDeleteConfig(adminView === 'training' ? 'training' : 'series', formData.id)} className="flex-1 py-4 bg-rose-500/10 text-rose-500 font-black rounded-xl border border-rose-500/20 active:scale-95 transition-all">
+                                            刪除
+                                        </button>
+                                    )}
+                                    <button onClick={() => handleSaveConfig(adminView === 'training' ? 'training' : 'series')} disabled={isSubmitting || !formData.name} className="flex-[2] py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2">
+                                        {isSubmitting && <Loader2 size={18} className="animate-spin" />}
+                                        {isSubmitting ? '處理中...' : '儲存'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                  )}
+
+                  {showModal && (modalType === 'course_config' || modalType === 'template') && createPortal(
+                    <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
+                        <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center border-b border-white/5 pb-4 gap-3">
+                                <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button>
+                                <h3 className="text-xl font-black text-white italic">{isEditMode ? '編輯課程' : '新增課程'}</h3>
+                            </div>
+                            <div className="space-y-4">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">課程名稱</label>
+                                    <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold" placeholder="例如: 假日進階班"/>
+                                </div>
+                                
+                                {formData.category === 'ROUTINE' ? (
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">重複週期</label>
+                                        <select value={formData.day_of_week} onChange={e => setFormData({...formData, day_of_week: Number(e.target.value)})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold appearance-none">
+                                            {['週日','週一','週二','週三','週四','週五','週六'].map((day, i) => (
+                                                <option key={i} value={i}>{day}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">日期</label>
+                                        <input type="date" value={formData.date || ''} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/>
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">開始時間</label>
+                                        <input type="time" value={formData.start_time || ''} onChange={e => setFormData({...formData, start_time: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">結束時間</label>
+                                        <input type="time" value={formData.end_time || ''} onChange={e => setFormData({...formData, end_time: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">上課地點</label>
+                                    <input type="text" value={formData.location || ''} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold" placeholder="例如: 萬善同停車場"/>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">人數上限</label>
+                                        <input type="number" value={formData.max_students || ''} onChange={e => setFormData({...formData, max_students: Number(e.target.value)})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">票卷類型</label>
+                                        <select value={formData.ticket_type} onChange={e => setFormData({...formData, ticket_type: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold appearance-none">
+                                            <option value="REGULAR">一般課程</option>
+                                            <option value="RACING">競速課程</option>
+                                            <option value="GROUP_PRACTICE">團練 (免費/低價)</option>
+                                            <option value="NONE">單次計費 (現金)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {formData.ticket_type === 'NONE' && (
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">單次費用 (0 為動態定價)</label>
+                                        <input type="number" value={formData.price || 0} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/>
+                                    </div>
+                                )}
+
+                                {formData.category === 'ROUTINE' && (
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">固定班底 (自動帶入報名)</label>
+                                        <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-zinc-900/50 rounded-xl border border-white/5 no-scrollbar">
+                                            {people.filter((p:any) => !p.is_hidden && hasRole(p, ROLES.RIDER) && !hasRole(p, ROLES.DEV)).map((p: any) => (
+                                                <button key={p.id} onClick={() => toggleFixedStudent(p.id)} className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${formData.default_student_ids?.includes(String(p.id)) ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-800 border-white/5 text-zinc-500'}`}>
+                                                    {p.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <button onClick={handleSaveCourse} disabled={isSubmitting || !formData.name} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2">
+                                    {isSubmitting && <Loader2 size={18} className="animate-spin" />}
+                                    {createSuccess ? <Check size={18}/> : null}
+                                    {isSubmitting ? '處理中...' : createSuccess ? '儲存成功' : '儲存課程'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                  )}
+
                   {/* MANUAL MODAL */}
                   {showModal && modalType === 'manual' && <ManualModal user={user} onClose={() => setShowModal(false)} />}
                   
                   {/* ... (Other modals like my_tickets, change_password etc. remain) ... */}
                   {/* MY TICKETS MODAL */}
-                  {showModal && modalType === 'my_tickets' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md animate-fade-in pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-0 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-0 animate-slide-up h-[85vh] overflow-hidden shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> 
+                  {showModal && modalType === 'my_tickets' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-0 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-0 h-[85vh] overflow-hidden shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> 
                         <div className="flex items-center justify-between border-b border-white/5 p-6 pb-4 shrink-0"> <div className="flex items-center gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">我的票卷</h3> </div> <button onClick={() => { setFormData({ people_id: user.id, type: 'REGULAR', amount: 4, last5: localStorage.getItem('CHIACHIA_LAST5') || '' }); setModalType('ticket'); }} className="px-3 py-1.5 bg-chiachia-green/20 text-chiachia-green rounded-lg text-xs font-bold border border-chiachia-green/30 active:scale-95">購買票卷</button> </div> 
-                        <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-4"> <div className="grid grid-cols-2 gap-3"> <div className="bg-zinc-900 p-4 rounded-2xl border border-white/10 text-center"> <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest block mb-1">一般課</span> <span className="text-3xl font-mono font-black text-blue-400">{myWallet?.regular_balance || 0}</span> </div> <div className="bg-zinc-900 p-4 rounded-2xl border border-white/10 text-center"> <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest block mb-1">競速班</span> <span className="text-3xl font-mono font-black text-amber-400">{myWallet?.racing_balance || 0}</span> </div> </div> <button onClick={() => { setSelectedHistoryPerson(user); loadFinancialHistory(user.id); setModalType('history'); }} className="w-full py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl border border-white/5 active:scale-95 transition-all flex items-center justify-center gap-2 text-xs"> <History size={14} /> 查看交易紀錄 </button> <div className="space-y-2"> <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">詳細批次</div> {myWallet && myWallet.batches && myWallet.batches.length > 0 ? myWallet.batches.map((b, idx) => ( <div key={idx} className={`flex justify-between items-center text-xs px-4 py-3 rounded-xl border ${b.type === 'REGULAR' ? 'bg-blue-500/10 text-blue-300 border-blue-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}> <div className="flex items-center gap-2"> <Ticket size={14}/> <span className="font-bold text-sm">{b.type === 'REGULAR' ? '一般卷' : '競速卷'} × {b.amount}</span> </div> <div className="flex items-center gap-1 font-mono opacity-80"> <Clock size={12}/> <span>{b.expiry_date}</span> </div> </div> )) : <div className="text-center text-xs text-zinc-500 py-4 bg-zinc-900/50 rounded-xl">無有效票卷</div>} </div> </div> </div> </div> , document.body)}
+                        <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-4"> <div className="grid grid-cols-2 gap-3"> <div className="bg-zinc-900 p-4 rounded-2xl border border-white/10 text-center"> <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest block mb-1">一般課</span> <span className="text-3xl font-mono font-black text-blue-400">{myWallet?.regular_balance || 0}</span> </div> <div className="bg-zinc-900 p-4 rounded-2xl border border-white/10 text-center"> <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest block mb-1">競速班</span> <span className="text-3xl font-mono font-black text-amber-400">{myWallet?.racing_balance || 0}</span> </div> </div> <button onClick={() => { setSelectedHistoryPerson(user); loadFinancialHistory(user.id); setModalType('history'); setShowModal(true); }} className="w-full py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl border border-white/5 active:scale-95 transition-all flex items-center justify-center gap-2 text-xs"> <History size={14} /> 查看交易紀錄 </button> <div className="space-y-2"> <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">詳細批次</div> {myWallet && myWallet.batches && myWallet.batches.length > 0 ? myWallet.batches.map((b, idx) => ( <div key={idx} className={`flex justify-between items-center text-xs px-4 py-3 rounded-xl border ${b.type === 'REGULAR' ? 'bg-blue-500/10 text-blue-300 border-blue-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}> <div className="flex items-center gap-2"> <Ticket size={14}/> <span className="font-bold text-sm">{b.type === 'REGULAR' ? '一般卷' : '競速卷'} × {b.amount}</span> </div> <div className="flex items-center gap-1 font-mono opacity-80"> <Clock size={12}/> <span>{b.expiry_date}</span> </div> </div> )) : <div className="text-center text-xs text-zinc-500 py-4 bg-zinc-900/50 rounded-xl">無有效票卷</div>} </div> </div> </div> </div> , document.body)}
                   {/* CHANGE PASSWORD MODAL */}
-                  {showModal && modalType === 'change_password' && createPortal( <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center animate-scale-in" onClick={e => e.stopPropagation()}> <h3 className="text-xl font-black text-white italic mb-4">修改密碼</h3> <div className="space-y-3 mb-6"> <div className="space-y-1"> <input type="password" placeholder="新密碼 (6-12位數字)" maxLength={12} pattern="[0-9]*" inputMode="numeric" value={formData.newPassword || ''} onChange={e => setFormData({...formData, newPassword: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-xl font-bold outline-none focus:border-chiachia-green/50 tracking-widest"/> </div> <div className="space-y-1"> <input type="password" placeholder="確認新密碼" maxLength={12} pattern="[0-9]*" inputMode="numeric" value={formData.confirmPassword || ''} onChange={e => setFormData({...formData, confirmPassword: e.target.value})} className={`w-full bg-zinc-900 border rounded-xl px-4 py-3 text-white text-center text-xl font-bold outline-none tracking-widest ${formData.confirmPassword && formData.newPassword !== formData.confirmPassword ? 'border-rose-500/50 focus:border-rose-500' : 'border-white/10 focus:border-chiachia-green/50'}`}/> </div> {formData.confirmPassword && formData.newPassword !== formData.confirmPassword && <div className="text-[10px] text-rose-500 font-bold">密碼不一致</div>} </div> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setShowModal(false)} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl active:bg-zinc-700 transition-colors">取消</button> <button onClick={handleUpdateSelf} disabled={!formData.newPassword || formData.newPassword.length < 6 || formData.newPassword.length > 12 || formData.newPassword !== formData.confirmPassword || isSubmitting} className="py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:grayscale"> {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : '確認修改'} </button> </div> </div> </div> , document.body)}
+                  {showModal && modalType === 'change_password' && createPortal( <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center" onClick={e => e.stopPropagation()}> <h3 className="text-xl font-black text-white italic mb-4">修改密碼</h3> <div className="space-y-3 mb-6"> <div className="space-y-1"> <input type="password" placeholder="新密碼 (6-12位數字)" maxLength={12} pattern="[0-9]*" inputMode="numeric" value={formData.newPassword || ''} onChange={e => setFormData({...formData, newPassword: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-xl font-bold outline-none focus:border-chiachia-green/50 tracking-widest"/> </div> <div className="space-y-1"> <input type="password" placeholder="確認新密碼" maxLength={12} pattern="[0-9]*" inputMode="numeric" value={formData.confirmPassword || ''} onChange={e => setFormData({...formData, confirmPassword: e.target.value})} className={`w-full bg-zinc-900 border rounded-xl px-4 py-3 text-white text-center text-xl font-bold outline-none tracking-widest ${formData.confirmPassword && formData.newPassword !== formData.confirmPassword ? 'border-rose-500/50 focus:border-rose-500' : 'border-white/10 focus:border-chiachia-green/50'}`}/> </div> {formData.confirmPassword && formData.newPassword !== formData.confirmPassword && <div className="text-[10px] text-rose-500 font-bold">密碼不一致</div>} </div> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setShowModal(false)} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl active:bg-zinc-700 transition-colors">取消</button> <button onClick={handleUpdateSelf} disabled={!formData.newPassword || formData.newPassword.length < 6 || formData.newPassword.length > 12 || formData.newPassword !== formData.confirmPassword || isSubmitting} className="py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:grayscale"> {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : '確認修改'} </button> </div> </div> </div> , document.body)}
                   {/* PUSH NOTIFICATION SETTINGS MODAL */}
-                  {showModal && modalType === 'settings_menu' && createPortal( <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-chiachia-green/20 text-center animate-scale-in" onClick={e => e.stopPropagation()}> <div className="flex justify-between items-center mb-6"> <div className="flex items-center gap-2"> <Bell size={20} className="text-chiachia-green" /> <h3 className="text-lg font-black text-white italic">推播設定</h3> </div> <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400"><X size={18}/></button> </div> <div className="space-y-4"> <div className={`p-4 rounded-xl border flex items-center justify-between ${pushPermission === 'granted' ? 'bg-chiachia-green/5 border-chiachia-green/30' : 'bg-zinc-900 border-white/10'}`}> <div className="text-left"> <div className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">Status</div> <div className={`text-sm font-bold ${pushPermission === 'granted' ? 'text-chiachia-green' : 'text-zinc-400'}`}> {pushPermission === 'granted' ? '已啟用 (Active)' : pushPermission === 'denied' ? '已封鎖 (Denied)' : '未啟用 (Inactive)'} </div> </div> {pushPermission === 'granted' && <CheckCircle2 size={24} className="text-chiachia-green"/>} </div> {pushPermission === 'granted' ? ( <div className="space-y-3"> <button onClick={handlePushSubscribe} disabled={isSubmitting} className="w-full py-3 bg-zinc-800 text-white font-bold rounded-xl border border-white/10 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"> {isSubmitting ? <Loader2 size={16} className="animate-spin"/> : <RefreshCw size={16}/>} 重新同步訂閱 </button> <button onClick={handlePushUnsubscribe} disabled={isSubmitting} className="w-full py-3 bg-rose-500/10 text-rose-500 font-bold rounded-xl border border-rose-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"> <Power size={16}/> 停用通知 </button> </div> ) : ( <button onClick={handlePushSubscribe} disabled={isSubmitting} className="w-full py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"> <ToggleLeft size={20}/> 啟用推播通知 </button> )} </div> </div> </div> , document.body)}
+                  {showModal && modalType === 'settings_menu' && createPortal( <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-chiachia-green/20 text-center" onClick={e => e.stopPropagation()}> <div className="flex justify-between items-center mb-6"> <div className="flex items-center gap-2"> <Bell size={20} className="text-chiachia-green" /> <h3 className="text-lg font-black text-white italic">推播設定</h3> </div> <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400"><X size={18}/></button> </div> <div className="space-y-4"> <div className={`p-4 rounded-xl border flex items-center justify-between ${pushPermission === 'granted' ? 'bg-chiachia-green/5 border-chiachia-green/30' : 'bg-zinc-900 border-white/10'}`}> <div className="text-left"> <div className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">Status</div> <div className={`text-sm font-bold ${pushPermission === 'granted' ? 'text-chiachia-green' : 'text-zinc-400'}`}> {pushPermission === 'granted' ? '已啟用 (Active)' : pushPermission === 'denied' ? '已封鎖 (Denied)' : '未啟用 (Inactive)'} </div> </div> {pushPermission === 'granted' && <CheckCircle2 size={24} className="text-chiachia-green"/>} </div> {pushPermission === 'granted' ? ( <div className="space-y-3"> <button onClick={handlePushSubscribe} disabled={isSubmitting} className="w-full py-3 bg-zinc-800 text-white font-bold rounded-xl border border-white/10 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"> {isSubmitting ? <Loader2 size={16} className="animate-spin"/> : <RefreshCw size={16}/>} 重新同步訂閱 </button> <button onClick={handlePushUnsubscribe} disabled={isSubmitting} className="w-full py-3 bg-rose-500/10 text-rose-500 font-bold rounded-xl border border-rose-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"> <Power size={16}/> 停用通知 </button> </div> ) : ( <button onClick={handlePushSubscribe} disabled={isSubmitting} className="w-full py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"> <ToggleLeft size={20}/> 啟用推播通知 </button> )} </div> </div> </div> , document.body)}
                   {/* LOGOUT CONFIRMATION MODAL */}
-                  {showLogoutModal && createPortal( <div className="fixed inset-0 z-[60000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in"> <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center animate-scale-in"> <h3 className="text-xl font-black text-white italic mb-2">登出帳號</h3> <p className="text-zinc-400 text-sm font-bold mb-6">確定要登出嗎？</p> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setShowLogoutModal(false)} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl">取消</button> <button onClick={confirmLogout} className="py-3 bg-rose-600 text-white font-black rounded-xl">登出</button> </div> </div> </div> , document.body)}
+                  {showLogoutModal && createPortal( <div className="fixed inset-0 z-[60000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"> <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center animate-scale-in"> <h3 className="text-xl font-black text-white italic mb-2">登出帳號</h3> <p className="text-zinc-400 text-sm font-bold mb-6">確定要登出嗎？</p> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setShowLogoutModal(false)} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl">取消</button> <button onClick={confirmLogout} className="py-3 bg-rose-600 text-white font-black rounded-xl">登出</button> </div> </div> </div> , document.body)}
                   {/* CROP MODAL */}
-                  {cropImageSrc && createPortal( <div className="fixed inset-0 z-[99999] bg-black flex flex-col animate-fade-in"> <div className="flex-none px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] flex justify-between items-center bg-black z-10 border-b border-white/10"> <button onClick={() => setCropImageSrc(null)} className="w-10 h-10 flex items-center justify-center rounded-full bg-zinc-900 text-zinc-400 active:bg-zinc-800 transition-all"><X size={20} /></button> <span className="text-sm font-black text-white italic tracking-wider">ADJUST PHOTO</span> <button onClick={handleCropSave} className="h-10 px-5 bg-chiachia-green text-black font-black rounded-full flex items-center gap-2 shadow-glow-green active:scale-95 transition-all text-xs"> {uploading ? <Loader2 className="animate-spin" size={14}/> : <Check size={14} />} SAVE </button> </div> <div className="flex-1 relative bg-zinc-900 w-full overflow-hidden"> <SimpleImageCropper image={cropImageSrc} crop={crop} zoom={zoom} aspect={cropAspect} onCropChange={setCrop} onCropComplete={onCropComplete} onZoomChange={setZoom} showGrid={true} style={{ containerStyle: { background: '#000' } }} /> </div> <div className="flex-none px-6 py-6 pb-[calc(env(safe-area-inset-bottom)+2rem)] bg-black flex items-center gap-4 border-t border-white/10"> <ZoomIn size={20} className="text-zinc-500" /> <input type="range" value={zoom} min={1} max={3} step={0.1} aria-labelledby="Zoom" onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-chiachia-green" /> </div> </div> , document.body)}
+                  {cropImageSrc && createPortal( <div className="fixed inset-0 z-[99999] bg-black flex flex-col"> <div className="flex-none px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] flex justify-between items-center bg-black z-10 border-b border-white/10"> <button onClick={() => setCropImageSrc(null)} className="w-10 h-10 flex items-center justify-center rounded-full bg-zinc-900 text-zinc-400 active:bg-zinc-800 transition-all"><X size={20} /></button> <span className="text-sm font-black text-white italic tracking-wider">ADJUST PHOTO</span> <button onClick={handleCropSave} className="h-10 px-5 bg-chiachia-green text-black font-black rounded-full flex items-center gap-2 shadow-glow-green active:scale-95 transition-all text-xs"> {uploading ? <Loader2 className="animate-spin" size={14}/> : <Check size={14} />} SAVE </button> </div> <div className="flex-1 relative bg-zinc-900 w-full overflow-hidden"> <SimpleImageCropper image={cropImageSrc} crop={crop} zoom={zoom} aspect={cropAspect} onCropChange={setCrop} onCropComplete={onCropComplete} onZoomChange={setZoom} showGrid={true} style={{ containerStyle: { background: '#000' } }} /> </div> <div className="flex-none px-6 py-6 pb-[calc(env(safe-area-inset-bottom)+2rem)] bg-black flex items-center gap-4 border-t border-white/10"> <ZoomIn size={20} className="text-zinc-500" /> <input type="range" value={zoom} min={1} max={3} step={0.1} aria-labelledby="Zoom" onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-chiachia-green" /> </div> </div> , document.body)}
                   {/* TICKET PURCHASE MODAL */}
-                  {showModal && modalType === 'ticket' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md animate-fade-in pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 animate-slide-up shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => { setModalType('my_tickets'); }} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><ArrowLeft size={18}/></button> <h3 className="text-xl font-black text-white italic">購買票卷</h3> </div> 
+                  {showModal && modalType === 'ticket' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => { setModalType('my_tickets'); }} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><ArrowLeft size={18}/></button> <h3 className="text-xl font-black text-white italic">購買票卷</h3> </div> 
                     <div className="space-y-4"> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">類型</label> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setFormData({...formData, type: 'REGULAR'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'REGULAR' ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>一般課 (${ticketPrices.regular_price})</button> <button onClick={() => setFormData({...formData, type: 'RACING'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'RACING' ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>競速班 (${ticketPrices.racing_price})</button> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">數量</label> <input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-2xl font-black outline-none focus:border-chiachia-green/50"/> </div> <div className="p-4 bg-zinc-900 rounded-xl border border-white/10 flex justify-between items-center"> <span className="text-xs font-bold text-zinc-400">預估金額</span> <span className="text-2xl font-black text-chiachia-green font-mono"> ${((formData.type === 'REGULAR' ? ticketPrices.regular_price : ticketPrices.racing_price) * (Number(formData.amount) || 0)).toLocaleString()} </span> </div> <div className="p-4 bg-zinc-900/50 rounded-xl border border-white/5 space-y-2"> <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">匯款資訊</div> <div className="flex justify-between items-center text-sm font-bold text-zinc-300"> <span>銀行代碼</span> <span className="font-mono text-white">822 (中國信託)</span> </div> <div className="flex justify-between items-center text-sm font-bold text-zinc-300"> <span>銀行帳號</span> <span className="font-mono text-white">1234-5678-9012</span> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">您的帳號後五碼</label> <input type="tel" maxLength={5} value={formData.last5} onChange={e => setFormData({...formData, last5: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-xl font-mono font-bold outline-none focus:border-chiachia-green/50 tracking-widest" placeholder="12345"/> </div> <button onClick={handleRequestPurchase} disabled={isSubmitting || !formData.amount || !formData.last5} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} 確認送出 </button> </div> </div> </div> , document.body)}
                   {/* ... (Other existing modals) ... */}
               </>
           );
-      }
   }
 
   // ... (Keep existing login screen) ...
   if (!user) {
       if (step === 'selectPerson') { 
           return ( 
-            <div className="h-full flex flex-col p-6 animate-fade-in pb-24"> 
+            <div className="h-full flex flex-col p-6 pb-24"> 
                 <div className="flex items-center justify-between mb-6"> <div className="flex flex-col"> <h2 className="text-2xl font-black text-white italic">SELECT RIDER</h2> <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Login to Access</p> </div> </div> 
                 <div className="grid grid-cols-2 gap-4 overflow-y-auto no-scrollbar pb-20 p-1"> {targetList.map((p: any) => ( <button key={p.id} onClick={() => handleSelectPerson(p)} className="flex flex-col items-center gap-3 p-4 rounded-3xl bg-zinc-900/40 border border-white/5 active:scale-95 transition-all hover:bg-zinc-800"> <Avatar p={p} size="xl" /> <span className="text-lg font-black text-white truncate w-full text-center">{p.name}</span> </button> ))} </div> 
             </div> 
@@ -1195,7 +1292,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
       }
       if (step === 'password') { 
           return ( 
-            <div className="h-full flex flex-col items-center justify-center p-8 space-y-6 animate-fade-in pb-24"> 
+            <div className="h-full flex flex-col items-center justify-center p-8 space-y-6 pb-24"> 
                 <button onClick={() => setStep('selectPerson')} className="absolute top-6 left-6 w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 active:bg-zinc-800 transition-all border border-white/5"><ArrowLeft size={20}/></button> 
                 <div className="flex flex-col items-center gap-4 mb-4"> <Avatar p={selectedPerson} size="2xl" /> <h2 className="text-2xl font-black text-white italic">{selectedPerson?.name}</h2> </div>
                 <div className="w-full max-w-xs space-y-4"> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest text-center block">Enter Password</label> <input ref={passwordInputRef} type="password" inputMode="numeric" pattern="[0-9]*" maxLength={12} value={loginPass} onChange={e => setLoginPass(e.target.value)} className="w-full bg-zinc-900 border border-white/10 rounded-2xl px-4 py-4 text-white text-center text-2xl font-bold outline-none focus:border-chiachia-green/50 tracking-[0.5em] placeholder:text-zinc-800 transition-colors" placeholder="••••••" /> </div> {errorMsg && <div className="text-rose-500 text-xs font-bold text-center animate-pulse bg-rose-500/10 py-2 rounded-xl border border-rose-500/20">{errorMsg}</div>} <button onClick={handleLogin} disabled={isLoggingIn || !loginPass} className="w-full h-14 bg-chiachia-green text-black font-black text-lg rounded-2xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale mt-2"> {isLoggingIn ? <Loader2 size={20} className="animate-spin" /> : <KeyRound size={20} />} {isLoggingIn ? 'VERIFYING...' : 'LOGIN'} </button> </div>

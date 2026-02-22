@@ -97,7 +97,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   const [now, setNow] = useState(Math.floor(Date.now() / 1000));
 
   const user = api.getUser();
-  const canManage = hasPermission(user, PERMISSIONS.RACE_MANAGE) || user?.role === 'admin';
+  const canManage = hasPermission(user, PERMISSIONS.RACE_MANAGE) || user?.role === 'admin' || hasRole(user, ROLES.DEV);
 
   const [createForm, setCreateForm] = useState({
     id: '',
@@ -574,6 +574,19 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
 
   const paddingTopClass = isFilterExpanded ? 'pt-[270px]' : 'pt-[110px]';
 
+  const formatLocation = (loc: string) => {
+      if (!loc) return '';
+      if (loc.startsWith('http')) {
+          try {
+              const url = new URL(loc);
+              return url.hostname.replace('www.', '');
+          } catch (e) {
+              return 'Link';
+          }
+      }
+      return loc;
+  };
+
   return (
     <>
       <div className="h-full bg-black relative">
@@ -585,16 +598,16 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                     <h2 className="text-[10px] font-black text-zinc-600 tracking-[0.4em] uppercase">Race Events</h2>
                     <div className="text-xl font-black text-white italic tracking-tighter flex items-center gap-2">
                         賽事資訊
-                        {canManage && (
-                            <button onClick={() => openCreateModal()} className="w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center border border-white/10 active:scale-90 transition-all shadow-lg ml-2">
-                                <Plus size={16}/>
-                            </button>
-                        )}
                     </div>
                   </div>
                   
                   {/* Toggle Button */}
                   <div className="flex items-center gap-2">
+                      {canManage && (
+                          <button onClick={() => openCreateModal()} className="w-10 h-10 rounded-xl bg-chiachia-green text-black flex items-center justify-center shadow-glow-green active:scale-90 transition-all">
+                              <Plus size={20} strokeWidth={3}/>
+                          </button>
+                      )}
                       <button 
                           onClick={() => setIsFilterExpanded(!isFilterExpanded)} 
                           className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isFilterExpanded ? 'bg-zinc-800 text-white' : 'bg-zinc-900 text-zinc-500'}`}
@@ -759,7 +772,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                                       <h3 className="text-md font-black text-white italic truncate tracking-tight">{event.name}</h3>
                                       <div className="flex items-center gap-3 text-[10px] text-zinc-500 font-bold mt-1.5 relative z-20">
                                           <button onClick={(e) => handleLocationClick(e, event.location || '')} className="flex items-center gap-1 hover:text-chiachia-green cursor-pointer pointer-events-auto">
-                                              <MapPin size={10}/> <span className="underline decoration-zinc-700 underline-offset-2">{event.location || 'TBA'}</span>
+                                              <MapPin size={10}/> <span className="underline decoration-zinc-700 underline-offset-2">{formatLocation(event.location)}</span>
                                           </button>
                                       </div>
                                   </div>

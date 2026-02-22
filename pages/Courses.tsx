@@ -50,8 +50,8 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
     const [showLoginHint, setShowLoginHint] = useState(false);
 
     // Permission Checks
-    const canEdit = hasPermission(user, PERMISSIONS.COURSE_EDIT);
-    const canViewAll = hasPermission(user, PERMISSIONS.COURSE_VIEW_ALL);
+    const canEdit = hasPermission(user, PERMISSIONS.COURSE_EDIT) || hasRole(user, ROLES.DEV);
+    const canViewAll = hasPermission(user, PERMISSIONS.COURSE_VIEW_ALL) || hasRole(user, ROLES.DEV);
     const isRider = !canViewAll;
 
     useEffect(() => {

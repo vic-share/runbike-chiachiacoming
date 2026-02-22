@@ -9,7 +9,7 @@ import Personal from './pages/Personal';
 import Courses from './pages/Courses';
 import { InstallPwaModal } from './components/InstallPwaModal';
 import { api } from './services/api';
-import { DataRecord, LookupItem, TeamInfo, RaceEvent } from './types';
+import { DataRecord, LookupItem, TeamInfo, RaceEvent, LegendRecord } from './types';
 import { LockKeyhole, Loader2 } from 'lucide-react';
 
 const DEFAULT_NAME = '睿睿';

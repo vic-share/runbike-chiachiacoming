@@ -23,9 +23,15 @@ const mapPerson = (p: any): LookupItem => {
     
     let roles = [];
     try {
-        roles = p.roles ? JSON.parse(p.roles) : (p.role === 'admin' ? ['COACH', 'RIDER'] : ['RIDER']);
+        if (Array.isArray(p.roles)) {
+            roles = p.roles;
+        } else if (typeof p.roles === 'string' && p.roles.trim() !== '') {
+            roles = JSON.parse(p.roles);
+        } else {
+            roles = (p.role === 'admin' ? ['COACH', 'RIDER'] : ['RIDER']);
+        }
     } catch (e) {
-        roles = ['RIDER'];
+        roles = (p.role === 'admin' ? ['COACH', 'RIDER'] : ['RIDER']);
     }
 
     return {

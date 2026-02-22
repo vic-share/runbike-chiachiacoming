@@ -32,8 +32,12 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const [submitting, setSubmitting] = useState(false);
   
   const currentUser = api.getUser();
-  const canRecord = currentUser && (hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.AIDE));
-  const isAdmin = currentUser?.role === 'admin' || hasRole(currentUser, ROLES.COACH);
+  const canRecord = currentUser && (hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.AIDE) || hasRole(currentUser, ROLES.DEV));
+  const isAdmin = currentUser?.role === 'admin' || hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.DEV);
+
+  const filteredPeople = useMemo(() => {
+    return people.filter((p: any) => hasRole(p, ROLES.RIDER) && !hasRole(p, ROLES.DEV));
+  }, [people]);
 
   // Deep Link Handling
   useEffect(() => {
@@ -61,7 +65,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       const lastTime = localStorage.getItem(KEY);
       const now = Date.now();
       const TIMEOUT = 60 * 1000; 
-      const validPeople = people.filter((p: any) => !p.is_hidden && hasRole(p, ROLES.RIDER));
+      const validPeople = filteredPeople.filter((p: any) => !p.is_hidden);
       if (validPeople.length === 0) return;
       const shouldRandomize = !activePersonId && (!lastTime || (now - parseInt(lastTime) > TIMEOUT));
       if (shouldRandomize) {
@@ -71,7 +75,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
               localStorage.setItem(KEY, String(now));
           }
       }
-  }, []);
+  }, [filteredPeople]);
 
   useEffect(() => {
       if (trainingTypes.length > 0 && !selectedType) {
@@ -82,27 +86,27 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
           setParticipatingRiderIds(prev => prev.includes(pid) ? prev : [...prev, pid]);
           setCurrentRiderId(prev => prev ? prev : pid);
       }
-      if (!activePersonId && people.length > 0 && !randomRider) {
-          const rand = people.filter((p:any) => !p.is_hidden && hasRole(p, ROLES.RIDER))[Math.floor(Math.random() * people.filter((p:any) => !p.is_hidden && hasRole(p, ROLES.RIDER)).length)];
+      if (!activePersonId && filteredPeople.length > 0 && !randomRider) {
+          const rand = filteredPeople.filter((p:any) => !p.is_hidden)[Math.floor(Math.random() * filteredPeople.filter((p:any) => !p.is_hidden).length)];
           if (rand) setRandomRider(rand);
       }
-  }, [trainingTypes, activePersonId, people]);
+  }, [trainingTypes, activePersonId, filteredPeople]);
 
   const activeRider = useMemo(() => {
       if (!isRecordingMode) {
-          const specific = people.find((p: any) => String(p.id) === String(activePersonId));
-          return specific || randomRider || (people.length > 0 ? people[0] : null);
+          const specific = filteredPeople.find((p: any) => String(p.id) === String(activePersonId));
+          return specific || randomRider || (filteredPeople.length > 0 ? filteredPeople[0] : null);
       }
-      if (currentRiderId) return people.find((p: any) => String(p.id) === String(currentRiderId));
-      if (activePersonId) return people.find((p: any) => String(p.id) === String(activePersonId));
+      if (currentRiderId) return filteredPeople.find((p: any) => String(p.id) === String(currentRiderId));
+      if (activePersonId) return filteredPeople.find((p: any) => String(p.id) === String(activePersonId));
       return null;
-  }, [people, currentRiderId, activePersonId, isRecordingMode, randomRider]);
+  }, [filteredPeople, currentRiderId, activePersonId, isRecordingMode, randomRider]);
 
   const validRiders = useMemo(() => {
        return participatingRiderIds
-           .map(id => people.find((p: any) => String(p.id) === String(id)))
+           .map(id => filteredPeople.find((p: any) => String(p.id) === String(id)))
            .filter((p: any) => !!p);
-  }, [participatingRiderIds, people]);
+  }, [participatingRiderIds, filteredPeople]);
 
   const getSelectedTypeId = () => {
       let typeId = selectedType;
@@ -234,10 +238,10 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const todayCount = todaySessionRecords.length;
 
   const sortedPeople = useMemo(() => {
-      return people
-        .filter((p: any) => !p.is_hidden && hasRole(p, ROLES.RIDER))
+      return filteredPeople
+        .filter((p: any) => !p.is_hidden)
         .sort((a: any, b: any) => a.name.localeCompare(b.name));
-  }, [people]);
+  }, [filteredPeople]);
 
   const honorList = useMemo(() => {
       if (!raceEvents || !activeRider) return [];
