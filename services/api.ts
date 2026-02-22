@@ -3,7 +3,8 @@ import { DataRecord, LookupItem, TeamInfo, ClassSession, Enrollment, TicketWalle
 
 const getWorkerUrl = () => {
     // 統一使用新的 Worker URL
-    return 'https://runbike-chiachiacoming.sky070680.workers.dev';
+    // 由於預覽環境出現 403 錯誤，暫時改回 /api 以便本地開發
+    return '/api';
 };
 
 const WORKER_URL = getWorkerUrl();
