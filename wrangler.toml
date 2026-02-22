@@ -24,8 +24,8 @@ crons = ["0 0 * * *", "0 15 * * *"]
 [[d1_databases]]
 binding = "RUNBIKE_DB"
 database_name = "RUNBIKE_DB"
-database_id = "b472284e-4ae4-4bf9-972a-77663dec0686"
+database_id = "d62306c8-2269-4252-824a-d434139cfabc"
 
 [[kv_namespaces]]
 binding = "RUNBIKE_KV"
-id = "ebae2931e47248e29192f2eec93fa557"
+id = "4f261c7339264e81bbdee936c32d96dc"
