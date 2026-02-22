@@ -9,7 +9,7 @@ const TEAM_ID = 1;
 // Send to specific Role (e.g., 'RIDER', 'COACH', 'all')
 async function sendPushToRole(env, role, title, body, url = "/") {
     if (!env.VAPID_PRIVATE_KEY) return 0;
-    const getDB = () => env['db-runbike'];
+    const getDB = () => env.RUNBIKE_DB;
     webpush.setVapidDetails(env.VAPID_SUBJECT || 'mailto:admin@chiachia.com', env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
     
     let query = `SELECT * FROM PushSubscriptions WHERE people_id IN (SELECT id FROM People WHERE team_id = ${TEAM_ID}`;
@@ -33,7 +33,7 @@ async function sendPushToRole(env, role, title, body, url = "/") {
 // Send to specific Person ID
 async function sendPushToUser(env, peopleId, title, body, url = "/") {
     if (!env.VAPID_PRIVATE_KEY || !peopleId) return 0;
-    const getDB = () => env['db-runbike'];
+    const getDB = () => env.RUNBIKE_DB;
     webpush.setVapidDetails(env.VAPID_SUBJECT || 'mailto:admin@chiachia.com', env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
 
     const { results } = await getDB().prepare(`SELECT * FROM PushSubscriptions WHERE people_id = ?`).bind(peopleId).all();
@@ -50,7 +50,7 @@ async function sendPushToUser(env, peopleId, title, body, url = "/") {
 
 // Send to Participants of a Race or Course
 async function sendPushToParticipants(env, entityId, type, title, body, url = "/") {
-    const getDB = () => env['db-runbike'];
+    const getDB = () => env.RUNBIKE_DB;
     let peopleIds = [];
 
     if (type === 'race') {
@@ -150,8 +150,8 @@ async function enrollDefaultStudents(db, sessionId, templateId) {
 
 export default {
   async scheduled(event, env, ctx) {
-      const getDB = () => env['db-runbike'];
-      const templates = (await env.CHIACHIACOMING_KV.get("PUSH_TEMPLATES", { type: "json" })) || {};
+      const getDB = () => env.RUNBIKE_DB;
+      const templates = (await env.RUNBIKE_KV.get("PUSH_TEMPLATES", { type: "json" })) || {};
       if (templates.is_enabled === false) return; // Master Switch
 
       const now = new Date();
@@ -241,7 +241,7 @@ export default {
           }
 
           // Auto-Create Course (Date + 7) -> Task 2-2: Push "New Course" (Routine)
-          const courseSystemStatus = await env.CHIACHIACOMING_KV.get("COURSE_SYSTEM_STATUS", { type: "json" });
+                    const courseSystemStatus = await env.RUNBIKE_KV.get("COURSE_SYSTEM_STATUS", { type: "json" });
           if (!courseSystemStatus || courseSystemStatus.enabled) {
               const nextWeekDay = nextWeek.getDay();
               const { results: dueTemplates } = await getDB().prepare(`SELECT * FROM CourseTemplates WHERE day_of_week = ? AND is_auto_scheduled = 1 AND team_id = ${TEAM_ID}`).bind(nextWeekDay).all();
@@ -282,7 +282,7 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
-    const getDB = () => env['db-runbike'];
+    const getDB = () => env.RUNBIKE_DB;
 
     try {
       // Lazy Init
@@ -388,12 +388,12 @@ export default {
       // --- Settings: Course System Status ---
       if (path === "/api/settings/course-system") {
           if (method === "GET") {
-              const status = await env.CHIACHIACOMING_KV.get("COURSE_SYSTEM_STATUS", { type: "json" });
+                            const status = await env.RUNBIKE_KV.get("COURSE_SYSTEM_STATUS", { type: "json" });
               return Response.json(status || { enabled: true }, { headers: corsHeaders });
           }
           if (method === "POST") {
               const body = await request.json();
-              await env.CHIACHIACOMING_KV.put("COURSE_SYSTEM_STATUS", JSON.stringify(body));
+                            await env.RUNBIKE_KV.put("COURSE_SYSTEM_STATUS", JSON.stringify(body));
               return Response.json({ success: true }, { headers: corsHeaders });
           }
       }
@@ -401,21 +401,21 @@ export default {
       // --- Settings: Ticket Pricing ---
       if (path === "/api/settings/ticket-pricing") {
           if (method === "GET") {
-              const pricing = await env.CHIACHIACOMING_KV.get("TICKET_PRICING", { type: "json" });
+                            const pricing = await env.RUNBIKE_KV.get("TICKET_PRICING", { type: "json" });
               const defaults = { regular_price: 400, racing_price: 700, group_practice_price: 150, special_tiers: [] };
               return Response.json(pricing || defaults, { headers: corsHeaders });
           }
           if (method === "POST") {
               const body = await request.json();
-              await env.CHIACHIACOMING_KV.put("TICKET_PRICING", JSON.stringify(body));
+                            await env.RUNBIKE_KV.put("TICKET_PRICING", JSON.stringify(body));
               return Response.json({ success: true }, { headers: corsHeaders });
           }
       }
 
       // --- Settings: Push Templates ---
       if (path === "/api/settings/push-templates") {
-          if (method === "GET") return Response.json(await env.CHIACHIACOMING_KV.get("PUSH_TEMPLATES", { type: "json" }) || {}, { headers: corsHeaders });
-          if (method === "POST") { await env.CHIACHIACOMING_KV.put("PUSH_TEMPLATES", JSON.stringify(await request.json())); return Response.json({ success: true }, { headers: corsHeaders }); }
+                    if (method === "GET") return Response.json(await env.RUNBIKE_KV.get("PUSH_TEMPLATES", { type: "json" }) || {}, { headers: corsHeaders });
+                    if (method === "POST") { await env.RUNBIKE_KV.put("PUSH_TEMPLATES", JSON.stringify(await request.json())); return Response.json({ success: true }, { headers: corsHeaders }); }
       }
 
       // --- Finance Report ---
@@ -462,7 +462,7 @@ export default {
         const storedPass = person.password ? String(person.password) : null;
         if (!storedPass || inputHash !== storedPass) return Response.json({ success: false, msg: "密碼錯誤" }, { headers: corsHeaders });
         const token = crypto.randomUUID();
-        await env.CHIACHIACOMING_KV.put(`SESSION_${token}`, JSON.stringify(person), { expirationTtl: 31536000 });
+                await env.RUNBIKE_KV.put(`SESSION_${token}`, JSON.stringify(person), { expirationTtl: 31536000 });
         return Response.json({ success: true, user: person, token }, { headers: corsHeaders });
       }
 
@@ -472,7 +472,7 @@ export default {
               await getDB().prepare("UPDATE RaceEvents SET name = ?, date = ?, location = ?, series_id = ?, public_url = ? WHERE id = ? AND team_id = ?").bind(name, date, location || '', series_id || null, eventUrl || null, id, TEAM_ID).run();
           } else {
               await getDB().prepare("INSERT INTO RaceEvents (team_id, name, date, location, series_id, public_url) VALUES (?, ?, ?, ?, ?, ?)").bind(TEAM_ID, name, date, location || '', series_id || null, eventUrl || null).run();
-              const templates = (await env.CHIACHIACOMING_KV.get("PUSH_TEMPLATES", { type: "json" })) || {};
+              const templates = (await env.RUNBIKE_KV.get("PUSH_TEMPLATES", { type: "json" })) || {};
               if (templates.is_enabled !== false) {
                   const title = templates.new_race_title || "🏆 新增賽事公告";
                   const bodyTpl = templates.new_race_body || "新增賽事：{name}，日期 {date}";
@@ -519,7 +519,7 @@ export default {
               }
           }
 
-          const templates = (await env.CHIACHIACOMING_KV.get("PUSH_TEMPLATES", { type: "json" })) || {};
+          const templates = (await env.RUNBIKE_KV.get("PUSH_TEMPLATES", { type: "json" })) || {};
           let title = "", bodyTpl = "";
           if (status === 'CONFIRMED') {
               title = templates.course_open_title || "✅ 確認開課通知";
