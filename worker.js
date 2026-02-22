@@ -730,12 +730,14 @@ export default {
       
       if (path === "/api/race-records" && method === "POST") { 
           const { event_id, people_id, value, race_group, note, photo_url, is_personal_honor } = await request.json(); 
+          const safe_event_id = event_id || null;
+          const safe_people_id = people_id || null;
           const safe_value = value || '';
           const safe_race_group = race_group || '';
           const safe_note = note || '';
           const safe_photo_url = (typeof photo_url !== 'undefined') ? photo_url : null;
           
-          const existing = await getDB().prepare("SELECT * FROM RaceRecords WHERE event_id = ? AND people_id = ?").bind(event_id, people_id).first(); 
+          const existing = await getDB().prepare("SELECT * FROM RaceRecords WHERE event_id = ? AND people_id = ?").bind(safe_event_id, safe_people_id).first(); 
           let safe_is_personal_honor = 0;
           if (typeof is_personal_honor !== 'undefined') {
               safe_is_personal_honor = is_personal_honor ? 1 : 0;
@@ -745,10 +747,10 @@ export default {
 
           if (existing) { 
               await getDB().prepare("UPDATE RaceRecords SET score = ?, ranking = ?, note = ?, personal_url = ?, is_personal_honor = ? WHERE event_id = ? AND people_id = ?")
-                  .bind(safe_value, safe_race_group, safe_note, safe_photo_url || existing.personal_url, safe_is_personal_honor, event_id, people_id).run(); 
+                  .bind(safe_value, safe_race_group, safe_note, safe_photo_url || existing.personal_url, safe_is_personal_honor, safe_event_id, safe_people_id).run(); 
           } else { 
               await getDB().prepare("INSERT INTO RaceRecords (team_id, event_id, people_id, score, ranking, note, personal_url, is_personal_honor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-                  .bind(TEAM_ID, event_id, people_id, safe_value, safe_race_group, safe_note, safe_photo_url, safe_is_personal_honor).run(); 
+                  .bind(TEAM_ID, safe_event_id, safe_people_id, safe_value, safe_race_group, safe_note, safe_photo_url, safe_is_personal_honor).run(); 
           } 
           return Response.json({ success: true }, { headers: corsHeaders }); 
       }
