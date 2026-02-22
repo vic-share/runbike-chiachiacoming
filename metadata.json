@@ -1,0 +1,9 @@
+{
+  "name": "2026 V2 嘉嘉來了",
+  "description": "Professional balance bike training and race tracking application.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}

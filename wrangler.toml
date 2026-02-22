@@ -1,0 +1,31 @@
+
+name = "chiachiacoming"
+main = "worker.js"
+compatibility_date = "2026-02-04"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+
+# [變數設定]
+[vars]
+VAPID_PUBLIC_KEY = "BM5bTSfktrz3d1oj3PgW2wW8EyBIWUY6Ig5clnjBnEiwE5jnOrobDdGbeqm98_RLu6jZq-0c_hjd6HR8Lr0EusU"
+VAPID_SUBJECT = "mailto:vic070680@gmail.com" 
+
+# [Supabase 設定]
+VITE_SUPABASE_URL = "https://pyltlobngdnoqjnrxefn.supabase.co"
+
+[triggers]
+# 00:00 UTC = 08:00 Taipei (Morning Push)
+# 15:00 UTC = 23:00 Taipei (Night Push & Batch Jobs)
+crons = ["0 0 * * *", "0 15 * * *"]
+
+[[d1_databases]]
+binding = "db-runbike"
+database_name = "db-runbike"
+database_id = "b472284e-4ae4-4bf9-972a-77663dec0686"
+
+[[kv_namespaces]]
+binding = "CHIACHIACOMING_KV"
+id = "ebae2931e47248e29192f2eec93fa557"

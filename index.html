@@ -1,0 +1,105 @@
+
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- SRE FIX: Cache busting version parameter added -->
+    <link rel="manifest" href="/manifest.json?v=2" />
+    
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#000000" />
+
+    <title>CHIA CHIA | KIDS RUN BIKE</title>
+    
+    <!-- 🟢 Inject Environment Variables from Worker -->
+    <script src="/api/env.js" type="text/javascript"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Yellowtail&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              'russo': ['"Russo One"', 'sans-serif'],
+              'cursive': ['"Yellowtail"', 'cursive'],
+            },
+            colors: {
+              background: '#000000',
+              surface: '#111111',
+              chiachia: {
+                green: '#39e75f',
+                light: '#86efac',
+                dark: '#14532d',
+              },
+            },
+            boxShadow: {
+              'glow-green': '0 0 20px rgba(57, 231, 95, 0.4)',
+              'glow-text': '0 0 10px rgba(57, 231, 95, 0.6)',
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --sat: env(safe-area-inset-top);
+        --sab: env(safe-area-inset-bottom);
+      }
+
+      /* 重置所有預設行為 */
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      /* 
+         SRE UPDATE: 恢復 height: 100% 作為預設值 
+         這樣在瀏覽器 Preview 模式下才不會塌陷。
+         JS 的 Hard Lock 會在 PWA 模式下覆寫這個值為 screen.height px。
+      */
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100vw;
+        height: 100%; /* 補回這裡 */
+        overflow: hidden; 
+        background-color: #000000;
+        -webkit-user-select: none;
+        user-select: none;
+        position: relative; 
+        -webkit-touch-callout: none;
+      }
+
+      #root {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        width: 100%;
+        height: 100%; /* 補回這裡 */
+      }
+
+      .no-scrollbar::-webkit-scrollbar { width: 0px; background: transparent; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      
+      input, textarea {
+        -webkit-user-select: text;
+        user-select: text;
+      }
+    </style>
+
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
