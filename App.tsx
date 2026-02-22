@@ -71,7 +71,7 @@ const App: React.FC = () => {
                       people_id: userId
                   };
                   const meta = import.meta as any;
-                  const WORKER_URL = (meta.env && meta.env.VITE_WORKER_URL) || (typeof window !== 'undefined' && (window as any).ENV && (window as any).ENV.VITE_WORKER_URL) || '/api';
+                  const WORKER_URL = (meta.env && meta.env.VITE_WORKER_URL) || (typeof window !== 'undefined' && (window as any).ENV && (window as any).ENV.VITE_WORKER_URL) || 'https://runbike-chiachiacoming.sky070680.workers.dev/';
                   await fetch(`${WORKER_URL}/subscribe`, {
                       method: 'POST',
                       body: JSON.stringify(payload),

@@ -2,18 +2,8 @@
 import { DataRecord, LookupItem, TeamInfo, ClassSession, Enrollment, TicketWallet, CourseTemplate, LegendRecord, RaceEvent, PushTemplates, TicketPricing, FinancialRecord, FinancialReport } from '../types';
 
 const getWorkerUrl = () => {
-    if (typeof window === 'undefined') return '';
-    const host = window.location.hostname;
-    
-    // [Fix] Local development should use relative path (proxied by Vite)
-    if (host.includes('localhost') || host.includes('127.0.0.1')) {
-        return ''; 
-    }
-    
-    if (host.includes('pages.dev') || host.includes('chiachiacoming')) {
-        return 'https://runbike-chiachiacoming.vic070680.workers.dev';
-    }
-    return 'https://runbile-api-for-aistudio.vic070680.workers.dev';
+    // 統一使用新的 Worker URL
+    return 'https://runbike-chiachiacoming.sky070680.workers.dev';
 };
 
 const WORKER_URL = getWorkerUrl();
