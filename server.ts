@@ -424,6 +424,16 @@ app.post('/api/settings/push-templates', async (req, res) => {
     res.json({ success: true });
 });
 
+app.get('/api/settings/bank-account', async (req, res) => {
+    const account = await KV.get("BANK_ACCOUNT");
+    res.json(account || { bank_code: '', account_number: '' });
+});
+
+app.post('/api/settings/bank-account', async (req, res) => {
+    await KV.put("BANK_ACCOUNT", JSON.stringify(req.body));
+    res.json({ success: true });
+});
+
 app.get('/api/finance/report', (req, res) => {
     const range = req.query.month; // Reusing 'month' param for range string to keep API simple or use a new param
     let whereClause = `WHERE team_id = ${TEAM_ID}`;

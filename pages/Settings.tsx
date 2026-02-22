@@ -133,7 +133,7 @@ const Avatar = ({ p, size = 'md', className = '' }: { p: any, size?: 'sm'|'md'|'
     );
 };
 
-const MenuCard = ({ title, icon, onClick, description, variant = 'default', disabled = false }: any) => {
+const MenuCard = ({ title, icon, onClick, description, variant = 'default', disabled = false, badge }: any) => {
     const isDanger = variant === 'danger';
     let bgClass = 'bg-zinc-900/40 border-white/5 hover:border-white/20';
     let iconClass = 'bg-zinc-800 text-zinc-400 group-hover:bg-zinc-700 group-hover:text-white';
@@ -153,8 +153,13 @@ const MenuCard = ({ title, icon, onClick, description, variant = 'default', disa
             onClick={disabled ? () => alert('系統目前關閉中，無法操作此功能') : onClick} 
             className={`glass-card p-4 rounded-2xl flex flex-col justify-between h-32 relative overflow-hidden transition-all group border w-full text-left touch-manipulation select-none ${bgClass} ${disabled ? '' : 'cursor-pointer'}`}
         >
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors mb-2 shadow-inner pointer-events-none ${iconClass}`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors mb-2 shadow-inner pointer-events-none ${iconClass} relative`}>
                 {React.cloneElement(icon as any, { size: 20 })}
+                {badge > 0 && (
+                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border border-black shadow-lg animate-pulse">
+                        {badge > 9 ? '9+' : badge}
+                    </div>
+                )}
             </div>
             <div className="w-full min-w-0 pointer-events-none">
                 <span className={`text-lg font-black italic block truncate ${textClass}`}>{title}</span>
@@ -198,11 +203,21 @@ const TemplateEditor = ({ title, icon, colorClass, data, fieldPrefix, setData, t
     );
 };
 
-const Header = ({ title, onAdd, onBack }: { title: string, onAdd?: () => void, onBack: () => void }) => (
+const Header = ({ title, onAdd, onBack, onNotificationClick, notificationCount }: { title: string, onAdd?: () => void, onBack: () => void, onNotificationClick?: () => void, notificationCount?: number }) => (
     <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onBack(); }} className="w-14 h-14 rounded-xl bg-zinc-900 flex items-center justify-center text-zinc-400 active:bg-zinc-800 active:scale-95 transition-all cursor-pointer z-50 touch-manipulation border border-white/5"> <ArrowLeft size={24}/> </button>
           <h2 className="text-2xl font-black text-white italic">{title}</h2>
+          {onNotificationClick && (
+              <button onClick={onNotificationClick} className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center relative">
+                  <BellRing size={20} />
+                  {notificationCount && notificationCount > 0 ? (
+                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border border-black shadow-lg animate-pulse">
+                          {notificationCount > 9 ? '9+' : notificationCount}
+                      </div>
+                  ) : null}
+              </button>
+          )}
         </div>
         {onAdd && ( <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAdd(); }} className="w-14 h-14 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green active:scale-90 transition-transform"> <Plus size={24} strokeWidth={3} /> </button> )}
     </div>
@@ -277,10 +292,13 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const [pushPermission, setPushPermission] = useState<NotificationPermission>('default');
   const [financialReport, setFinancialReport] = useState<FinancialReport | null>(null);
   const [financialHistory, setFinancialHistory] = useState<FinancialRecord[]>([]);
+  const [expandedRecord, setExpandedRecord] = useState<number | null>(null);
   const [selectedHistoryPerson, setSelectedHistoryPerson] = useState<LookupItem | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'TRANSFER' | 'LINEPAY'>('TRANSFER');
+  const [bankAccount, setBankAccount] = useState({ bank_code: '', account_number: '' });
   
   // Update History Filter State for Range Support
-  const [historyFilter, setHistoryFilter] = useState<{type: string, month: string}>({ type: 'ALL', month: '' });
+  const [historyFilter, setHistoryFilter] = useState<{type: string, period: string}>({ type: 'ALL', period: '1M' });
   const [historyDateRange, setHistoryDateRange] = useState<'1W' | '1M' | '3M' | 'ALL' | 'PICK'>('1M');
   const [historyCustomRange, setHistoryCustomRange] = useState<{start: string, end: string}>({
       start: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
@@ -320,7 +338,8 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   useEffect(() => {
       if(user) {
           loadWallets();
-          if((adminView === 'tickets' || adminView === 'course_ticket') && hasPermission(user, PERMISSIONS.TICKET_VIEW_ALL)) { loadTicketRequests(); loadTicketPrices(); loadFinancialReport(); loadCourseSystemStatus(); }
+          if(hasPermission(user, PERMISSIONS.TICKET_MANAGE)) loadTicketRequests();
+          if((adminView === 'tickets' || adminView === 'course_ticket') && hasPermission(user, PERMISSIONS.TICKET_VIEW_ALL)) { loadTicketPrices(); loadFinancialReport(); loadCourseSystemStatus(); loadBankAccount(); }
           if((adminView === 'courses' || adminView === 'course_ticket') && hasPermission(user, PERMISSIONS.COURSE_VIEW_ALL)) { loadTemplates(); loadSessions(); loadCourseSystemStatus(); loadTicketPrices(); }
           if(adminView === 'push_system' && hasPermission(user, PERMISSIONS.PUSH_MANAGE)) loadPushTemplates();
       }
@@ -349,7 +368,43 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
       const report = await api.fetchFinancialReport(query); 
       setFinancialReport(report); 
   };
-  const loadFinancialHistory = async (pid?: string|number) => { const history = await api.fetchFinancialHistory(pid); setFinancialHistory(history); };
+  const loadFinancialHistory = async (pid?: string|number) => {
+    const history = await api.fetchFinancialHistory(pid);
+    const filteredData = history.filter(record => {
+        const recordDate = new Date(record.created_at);
+        const period = historyFilter.period;
+        let isInPeriod = false;
+        if (period === '1W') {
+            isInPeriod = recordDate > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        } else if (period === '1M') {
+            isInPeriod = recordDate > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        } else if (period === '3M') {
+            isInPeriod = recordDate > new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+        } else if (period === 'CUSTOM') {
+            const start = startOfDay(new Date(historyCustomRange.start));
+            const end = endOfDay(new Date(historyCustomRange.end));
+            if(isValid(start) && isValid(end)) {
+              isInPeriod = isWithinInterval(recordDate, { start, end });
+            }
+        }
+                if (period === 'ALL') {
+            isInPeriod = true;
+        }
+
+        const type = historyFilter.type;
+        let isTypeMatch = false;
+        if (type === 'ALL') {
+            isTypeMatch = true;
+        } else {
+            isTypeMatch = record.transaction_type === type;
+        }
+
+        return isInPeriod && isTypeMatch;
+    });
+    setFinancialHistory(filteredData);
+  };
+  const loadBankAccount = async () => { const account = await api.fetchBankAccount(); if(account) setBankAccount(account); };
+  const handleSaveBankAccount = async () => { setIsSubmitting(true); try { await api.saveBankAccount(bankAccount); setFeedbackMsg('收款帳號已更新'); setTimeout(() => setFeedbackMsg(null), 2000); setShowModal(false); } catch (e) { alert('儲存失敗'); } finally { setIsSubmitting(false); } };
   
   useEffect(() => {
       if (adminView === 'tickets' && ticketView === 'report') {
@@ -358,6 +413,12 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
           }
       }
   }, [reportDateRange, adminView, ticketView]);
+
+  useEffect(() => {
+    if (modalType === 'history' && user) {
+      loadFinancialHistory(user.id);
+    }
+  }, [historyFilter, modalType, user]);
 
   const loadPushTemplates = async () => {
       const t = await api.fetchPushTemplates();
@@ -574,12 +635,28 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   };
   
   const handleAddTicket = async () => { if(!formData.people_id || !formData.amount) return; setIsSubmitting(true); const unitPrice = formData.type === 'REGULAR' ? ticketPrices.regular_price : ticketPrices.racing_price; const calculatedCash = unitPrice * Number(formData.amount); const res = await api.addTickets(formData.people_id, formData.type, Number(formData.amount), formData.expiry_date, '教練手動儲值', calculatedCash); if(res) { await loadWallets(); setShowModal(false); } setIsSubmitting(false); };
-  const handleRequestPurchase = async () => { if(!user || !formData.amount || !formData.last5) return; setIsSubmitting(true); try { const unitPrice = formData.type === 'REGULAR' ? ticketPrices.regular_price : ticketPrices.racing_price; const totalPrice = unitPrice * Number(formData.amount); await api.requestTicketPurchase(user.id, formData.type, Number(formData.amount), formData.last5, totalPrice); localStorage.setItem('CHIACHIA_LAST5', formData.last5); alert('已送出購買請求，請等待教練確認。'); setShowModal(false); } catch (e) { alert('送出失敗，請稍後再試'); } finally { setIsSubmitting(false); } };
+  const handleRequestPurchase = async () => { 
+      const last5 = paymentMethod === 'LINEPAY' ? 'LINEPAY' : formData.last5;
+      if(!user || !formData.amount || !last5) return; 
+      setIsSubmitting(true); 
+      try { 
+          const unitPrice = formData.type === 'REGULAR' ? ticketPrices.regular_price : ticketPrices.racing_price; 
+          const totalPrice = unitPrice * Number(formData.amount); 
+          await api.requestTicketPurchase(user.id, formData.type, Number(formData.amount), last5, totalPrice); 
+          if (paymentMethod === 'TRANSFER') localStorage.setItem('CHIACHIA_LAST5', last5); 
+          alert('已送出購買請求，請等待教練確認。'); 
+          setShowModal(false); 
+      } catch (e) { 
+          alert('送出失敗，請稍後再試'); 
+      } finally { 
+          setIsSubmitting(false); 
+      } 
+  };
   const handleConfirmRequest = (req: any) => {
       setConfirmModal({
           show: true,
           title: "確認入帳",
-          message: `確認收到 ${req.person_name} 的匯款 (${req.amount}張 / ${req.last_5_digits})？`,
+          message: `確認收到 ${req.person_name} 的匯款 (${req.amount}張 / ${req.last_5_digits === 'LINEPAY' ? 'LINEPAY' : req.last_5_digits})？`,
           onConfirm: async () => {
               setIsSubmitting(true);
               try {
@@ -772,9 +849,10 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                               <div className="grid grid-cols-2 gap-3">
                                   <MenuCard title="例行課程" description="自動排課" icon={<Repeat/>} onClick={() => setCourseCategory('ROUTINE')} disabled={!courseSystemEnabled} />
                                   <MenuCard title="專訓課程" description="強化訓練" icon={<Star/>} onClick={() => setCourseCategory('SPECIAL')} disabled={!courseSystemEnabled} />
-                                  <MenuCard title="庫存" icon={<InventoryIcon/>} onClick={() => setTicketView('inventory')} description="錢包與儲值" disabled={!courseSystemEnabled} />
+                                  <MenuCard title="庫存" icon={<InventoryIcon/>} onClick={() => setTicketView('inventory')} description="錢包與儲值" disabled={!courseSystemEnabled} badge={ticketRequests.length} />
                                   <MenuCard title="定價" icon={<Tag/>} onClick={() => setTicketView('pricing')} description="票價與規則" disabled={!courseSystemEnabled} />
                                   <MenuCard title="帳務" icon={<FileBarChart/>} onClick={() => { loadFinancialReport(); setTicketView('report'); }} description="財務報表" disabled={!courseSystemEnabled} />
+<MenuCard title="收款帳號" icon={<Banknote/>} onClick={() => { setModalType('bank_account'); setShowModal(true); }} description="設定匯款帳戶" disabled={!courseSystemEnabled} />
                               </div>
                           </div>
                       </>
@@ -794,7 +872,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                   return ( 
                     <> 
                         <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> 
-                            <Header title="庫存管理" onBack={() => setTicketView('menu')} /> 
+                            <Header title="庫存管理" onBack={() => setTicketView('menu')} onNotificationClick={() => { setAdminView('course_ticket'); setTicketView('inventory'); }} notificationCount={ticketRequests.length} /> 
                         </div> 
                         <div className="px-4 py-4 pb-28 space-y-6"> 
                             {ticketRequests.length > 0 && (
@@ -807,7 +885,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                                 <div>
                                                     <div className="text-sm font-bold text-white">{req.person_name}</div>
                                                     <div className="text-[10px] text-zinc-400 font-mono">
-                                                        {req.type === 'REGULAR' ? '一般' : '競速'} × {req.amount} (後五碼: <span className="text-amber-400 font-black">{req.last_5_digits}</span>)
+                                                        {req.type === 'REGULAR' ? '一般' : '競速'} × {req.amount} ({req.last_5_digits === 'LINEPAY' ? 'LINEPAY' : `後五碼: ${req.last_5_digits}`})
                                                     </div>
                                                 </div>
                                             </div>
@@ -1002,7 +1080,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                             <MenuCard title="推播通知" icon={<BellRing/>} onClick={() => { setModalType('settings_menu'); setShowModal(true); }} />
                             <MenuCard title="使用說明書" icon={<BookOpen/>} onClick={() => { setModalType('manual'); setShowModal(true); }} />
                             {(hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="人員管理" icon={<User/>} onClick={() => setAdminView('players')} />}
-                            {(hasPermission(user, PERMISSIONS.COURSE_EDIT) || hasPermission(user, PERMISSIONS.TICKET_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="課程票務系統" icon={<LayoutGrid/>} onClick={() => { setAdminView('course_ticket'); setCourseCategory(null); setTicketView('menu'); }} />}
+                            {(hasPermission(user, PERMISSIONS.COURSE_EDIT) || hasPermission(user, PERMISSIONS.TICKET_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="課程票務系統" icon={<LayoutGrid/>} onClick={() => { setAdminView('course_ticket'); setCourseCategory(null); setTicketView('menu'); }} badge={ticketRequests.length} />}
                             {(hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="訓練項目" icon={<Activity/>} onClick={() => setAdminView('training')} />}
                             {(hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="賽事系列" icon={<Flag/>} onClick={() => setAdminView('series')} />}
                             {(hasPermission(user, PERMISSIONS.PUSH_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="推播系統" icon={<Radio/>} onClick={() => { setAdminView('push_system'); setPushView('menu'); }} />}
@@ -1064,7 +1142,33 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                   {/* EDIT PROFILE MODAL */}
                   {showModal && modalType === 'parent_edit' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">編輯檔案</h3> </div> <div className="space-y-4"> <div className="w-full"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 block">檔案照片預覽</label> <div className="relative w-full aspect-video rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden group"> {user?.b_url ? <img src={user.b_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center flex-col gap-2 text-zinc-600"><ImageIcon size={32}/><span className="text-[10px] font-bold">無封面</span></div>} <label htmlFor="upload-cover-edit" className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"> <Camera size={24} className="text-white drop-shadow-lg mb-1"/> <span className="text-[10px] text-white font-bold bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">更換封面</span> </label> <input type="file" accept="image/*" className="hidden" id="upload-cover-edit" onChange={(e) => handleFileSelect(e, 'b')} /> <div className="absolute bottom-3 left-3 w-20 h-20 rounded-3xl border-2 border-white bg-zinc-950 overflow-hidden shadow-lg z-20 group/avatar"> {user?.s_url ? <img src={user.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><UserCircle2 size={32}/></div>} <label htmlFor="upload-avatar-edit" className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer"> <Camera size={20} className="text-white drop-shadow-md"/> </label> <input type="file" accept="image/*" className="hidden" id="upload-avatar-edit" onChange={(e) => handleFileSelect(e, 's')} /> </div> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">暱稱 (顯示名稱)</label> <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">全名 (真實姓名)</label> <input type="text" value={formData.full_name || ''} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">生日</label> <input type="date" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">個人宣言</label> <textarea rows={3} value={formData.myword || ''} onChange={e => setFormData({...formData, myword: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-sm"/> </div> <button onClick={handleUpdateSelf} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} {isSubmitting ? '儲存中...' : '儲存變更'} </button> </div> </div> </div> , document.body)}
 
-                  {/* PLAYER MANAGEMENT MODAL */}
+                  {/* BANK ACCOUNT MODAL */}
+      {showModal && modalType === 'bank_account' && createPortal(
+        <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
+          <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center border-b border-white/5 pb-4 gap-3">
+              <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button>
+              <h3 className="text-xl font-black text-white italic">設定收款帳號</h3>
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">銀行代碼</label>
+                  <input type="text" value={bankAccount.bank_code} onChange={e => setBankAccount({...bankAccount, bank_code: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-base" placeholder="例如：007"/>
+              </div>
+              <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">帳號</label>
+                  <input type="text" value={bankAccount.account_number} onChange={e => setBankAccount({...bankAccount, account_number: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-base" placeholder="請輸入收款帳號"/>
+              </div>
+              <button onClick={handleSaveBankAccount} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2">
+                  {isSubmitting ? <Loader2 size={18} className="animate-spin"/> : <Check size={18} />} {isSubmitting ? '儲存中...' : '儲存設定'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* PLAYER MANAGEMENT MODAL */}
                   {showModal && modalType === 'player' && createPortal(
                     <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
                         <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
@@ -1270,11 +1374,109 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                   {showModal && modalType === 'settings_menu' && createPortal( <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-chiachia-green/20 text-center" onClick={e => e.stopPropagation()}> <div className="flex justify-between items-center mb-6"> <div className="flex items-center gap-2"> <Bell size={20} className="text-chiachia-green" /> <h3 className="text-lg font-black text-white italic">推播設定</h3> </div> <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400"><X size={18}/></button> </div> <div className="space-y-4"> <div className={`p-4 rounded-xl border flex items-center justify-between ${pushPermission === 'granted' ? 'bg-chiachia-green/5 border-chiachia-green/30' : 'bg-zinc-900 border-white/10'}`}> <div className="text-left"> <div className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">Status</div> <div className={`text-sm font-bold ${pushPermission === 'granted' ? 'text-chiachia-green' : 'text-zinc-400'}`}> {pushPermission === 'granted' ? '已啟用 (Active)' : pushPermission === 'denied' ? '已封鎖 (Denied)' : '未啟用 (Inactive)'} </div> </div> {pushPermission === 'granted' && <CheckCircle2 size={24} className="text-chiachia-green"/>} </div> {pushPermission === 'granted' ? ( <div className="space-y-3"> <button onClick={handlePushSubscribe} disabled={isSubmitting} className="w-full py-3 bg-zinc-800 text-white font-bold rounded-xl border border-white/10 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"> {isSubmitting ? <Loader2 size={16} className="animate-spin"/> : <RefreshCw size={16}/>} 重新同步訂閱 </button> <button onClick={handlePushUnsubscribe} disabled={isSubmitting} className="w-full py-3 bg-rose-500/10 text-rose-500 font-bold rounded-xl border border-rose-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"> <Power size={16}/> 停用通知 </button> </div> ) : ( <button onClick={handlePushSubscribe} disabled={isSubmitting} className="w-full py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"> <ToggleLeft size={20}/> 啟用推播通知 </button> )} </div> </div> </div> , document.body)}
                   {/* LOGOUT CONFIRMATION MODAL */}
                   {showLogoutModal && createPortal( <div className="fixed inset-0 z-[60000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"> <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center animate-scale-in"> <h3 className="text-xl font-black text-white italic mb-2">登出帳號</h3> <p className="text-zinc-400 text-sm font-bold mb-6">確定要登出嗎？</p> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setShowLogoutModal(false)} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl">取消</button> <button onClick={confirmLogout} className="py-3 bg-rose-600 text-white font-black rounded-xl">登出</button> </div> </div> </div> , document.body)}
-                  {/* CROP MODAL */}
+                  {/* FINANCIAL HISTORY MODAL */}
+      {showModal && modalType === 'history' && createPortal(
+        <div className="fixed inset-0 z-[30000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
+          <div className="glass-card w-full max-w-sm rounded-t-[32px] p-0 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-0 h-[85vh] overflow-hidden shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-white/5 p-6 pb-4 shrink-0">
+              <div className="flex items-center gap-3">
+                <button onClick={() => { setModalType('my_tickets'); }} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><ArrowLeft size={18}/></button>
+                <h3 className="text-xl font-black text-white italic">交易紀錄</h3>
+              </div>
+            </div>
+            <div className="p-4 border-b border-white/5">
+                <div className="grid grid-cols-2 gap-2">
+                    <select onChange={e => setHistoryFilter({...historyFilter, type: e.target.value})} value={historyFilter.type} className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-3 py-2 text-white">
+                        <option value="ALL">所有類型</option>
+                        <option value="DEPOSIT">儲值</option>
+                        <option value="SPEND">花費</option>
+                        <option value="REFUND">退款</option>
+                    </select>
+                    <select onChange={e => { setHistoryFilter({...historyFilter, period: e.target.value}); if(e.target.value !== 'CUSTOM') setIsHistoryDateMenuOpen(false); else setIsHistoryDateMenuOpen(true); }} value={historyFilter.period} className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-3 py-2 text-white">
+                        <option value="1W">最近一週</option>
+                        <option value="1M">最近一個月</option>
+                        <option value="3M">最近三個月</option>
+                        <option value="ALL">所有時間</option>
+                        <option value="CUSTOM">自訂日期</option>
+                    </select>
+                </div>
+                {historyFilter.period === 'CUSTOM' && (
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                        <input type="date" value={historyCustomRange.start} onChange={e => setHistoryCustomRange({...historyCustomRange, start: e.target.value})} className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-3 py-2 text-white" />
+                        <input type="date" value={historyCustomRange.end} onChange={e => setHistoryCustomRange({...historyCustomRange, end: e.target.value})} className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-3 py-2 text-white" />
+                    </div>
+                )}
+            </div>
+            <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-4">
+              <div className="space-y-2">
+                {financialHistory.length > 0 ? (
+                  financialHistory.map((record, index) => (
+                    <div key={index}>
+                      <button onClick={() => setExpandedRecord(expandedRecord === index ? null : index)} className="w-full flex justify-between items-center text-sm px-4 py-3 rounded-xl border bg-zinc-900 border-white/10">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${record.amount > 0 ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                            {record.amount > 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                          </div>
+                          <div>
+                            <span className="font-bold text-white text-left block">{record.note}</span>
+                            <div className="text-xs text-zinc-400 font-mono text-left">{format(parseISO(record.created_at), 'yyyy-MM-dd HH:mm')}</div>
+                          </div>
+                        </div>
+                        <div className={`font-mono font-bold text-lg ${record.amount > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {record.amount > 0 ? '+' : ''}{record.amount}
+                        </div>
+                      </button>
+                      {expandedRecord === index && (
+                        <div className="p-4 bg-zinc-800/50 rounded-b-xl text-xs text-zinc-400 space-y-2 border-t border-white/5">
+                          <div className="flex justify-between"><span>交易ID:</span> <span className="font-mono text-white">#{record.id}</span></div>
+                          <div className="flex justify-between"><span>類型:</span> <span className="text-white">{record.transaction_type}</span></div>
+                          {record.ticket_type && <div className="flex justify-between"><span>票卷種類:</span> <span className="text-white">{record.ticket_type}</span></div>}
+                          {record.amount_cash !== 0 && <div className="flex justify-between"><span>現金金額:</span> <span className="font-mono text-white">${record.amount_cash}</span></div>}
+                          {record.related_session_id && <div className="flex justify-between"><span>關聯課程ID:</span> <span className="font-mono text-white">#{record.related_session_id}</span></div>}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-sm text-zinc-600 py-10 bg-zinc-900/50 rounded-xl">無交易紀錄</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* CROP MODAL */}
                   {cropImageSrc && createPortal( <div className="fixed inset-0 z-[99999] bg-black flex flex-col"> <div className="flex-none px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] flex justify-between items-center bg-black z-10 border-b border-white/10"> <button onClick={() => setCropImageSrc(null)} className="w-10 h-10 flex items-center justify-center rounded-full bg-zinc-900 text-zinc-400 active:bg-zinc-800 transition-all"><X size={20} /></button> <span className="text-sm font-black text-white italic tracking-wider">ADJUST PHOTO</span> <button onClick={handleCropSave} className="h-10 px-5 bg-chiachia-green text-black font-black rounded-full flex items-center gap-2 shadow-glow-green active:scale-95 transition-all text-xs"> {uploading ? <Loader2 className="animate-spin" size={14}/> : <Check size={14} />} SAVE </button> </div> <div className="flex-1 relative bg-zinc-900 w-full overflow-hidden"> <SimpleImageCropper image={cropImageSrc} crop={crop} zoom={zoom} aspect={cropAspect} onCropChange={setCrop} onCropComplete={onCropComplete} onZoomChange={setZoom} showGrid={true} style={{ containerStyle: { background: '#000' } }} /> </div> <div className="flex-none px-6 py-6 pb-[calc(env(safe-area-inset-bottom)+2rem)] bg-black flex items-center gap-4 border-t border-white/10"> <ZoomIn size={20} className="text-zinc-500" /> <input type="range" value={zoom} min={1} max={3} step={0.1} aria-labelledby="Zoom" onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-chiachia-green" /> </div> </div> , document.body)}
                   {/* TICKET PURCHASE MODAL */}
                   {showModal && modalType === 'ticket' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => { setModalType('my_tickets'); }} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><ArrowLeft size={18}/></button> <h3 className="text-xl font-black text-white italic">購買票卷</h3> </div> 
-                    <div className="space-y-4"> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">類型</label> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setFormData({...formData, type: 'REGULAR'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'REGULAR' ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>一般課 (${ticketPrices.regular_price})</button> <button onClick={() => setFormData({...formData, type: 'RACING'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'RACING' ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>競速班 (${ticketPrices.racing_price})</button> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">數量</label> <input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-2xl font-black outline-none focus:border-chiachia-green/50"/> </div> <div className="p-4 bg-zinc-900 rounded-xl border border-white/10 flex justify-between items-center"> <span className="text-xs font-bold text-zinc-400">預估金額</span> <span className="text-2xl font-black text-chiachia-green font-mono"> ${((formData.type === 'REGULAR' ? ticketPrices.regular_price : ticketPrices.racing_price) * (Number(formData.amount) || 0)).toLocaleString()} </span> </div> <div className="p-4 bg-zinc-900/50 rounded-xl border border-white/5 space-y-2"> <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">匯款資訊</div> <div className="flex justify-between items-center text-sm font-bold text-zinc-300"> <span>銀行代碼</span> <span className="font-mono text-white">822 (中國信託)</span> </div> <div className="flex justify-between items-center text-sm font-bold text-zinc-300"> <span>銀行帳號</span> <span className="font-mono text-white">1234-5678-9012</span> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">您的帳號後五碼</label> <input type="tel" maxLength={5} value={formData.last5} onChange={e => setFormData({...formData, last5: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-xl font-mono font-bold outline-none focus:border-chiachia-green/50 tracking-widest" placeholder="12345"/> </div> <button onClick={handleRequestPurchase} disabled={isSubmitting || !formData.amount || !formData.last5} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} 確認送出 </button> </div> </div> </div> , document.body)}
+                    <div className="space-y-4"> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">類型</label> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setFormData({...formData, type: 'REGULAR'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'REGULAR' ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>一般課 (${ticketPrices.regular_price})</button> <button onClick={() => setFormData({...formData, type: 'RACING'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'RACING' ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>競速班 (${ticketPrices.racing_price})</button> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">數量</label> <input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-2xl font-black outline-none focus:border-chiachia-green/50"/> </div> <div className="p-4 bg-zinc-900 rounded-xl border border-white/10 flex justify-between items-center"> <span className="text-xs font-bold text-zinc-400">預估金額</span> <span className="text-2xl font-black text-chiachia-green font-mono"> ${((formData.type === 'REGULAR' ? ticketPrices.regular_price : ticketPrices.racing_price) * (Number(formData.amount) || 0)).toLocaleString()} </span> </div> <div className="space-y-1">
+                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">付款方式</label>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button onClick={() => setPaymentMethod('TRANSFER')} className={`py-3 rounded-xl font-bold border transition-all ${paymentMethod === 'TRANSFER' ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>轉帳</button>
+                            <button onClick={() => setPaymentMethod('LINEPAY')} className={`py-3 rounded-xl font-bold border transition-all ${paymentMethod === 'LINEPAY' ? 'bg-green-500 text-white border-green-500' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>LINE PAY</button>
+                        </div>
+                    </div>
+                    {paymentMethod === 'TRANSFER' && (
+                        <>
+                            <div className="p-4 bg-zinc-900/50 rounded-xl border border-white/5 space-y-2">
+                                <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">匯款資訊</div>
+                                <div className="flex justify-between items-center text-sm font-bold text-zinc-300">
+                                    <span>銀行代碼</span>
+                                    <span className="font-mono text-white">{bankAccount.bank_code || 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm font-bold text-zinc-300">
+                                    <span>銀行帳號</span>
+                                    <span className="font-mono text-white">{bankAccount.account_number || 'N/A'}</span>
+                                </div>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">您的帳號後五碼</label>
+                                <input type="tel" maxLength={5} value={formData.last5} onChange={e => setFormData({...formData, last5: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-xl font-mono font-bold outline-none focus:border-chiachia-green/50 tracking-widest" placeholder="12345"/>
+                            </div>
+                        </>
+                    )} <button onClick={handleRequestPurchase} disabled={isSubmitting || !formData.amount || !formData.last5} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} 確認送出 </button> </div> </div> </div> , document.body)}
                   {/* ... (Other existing modals) ... */}
               </>
           );

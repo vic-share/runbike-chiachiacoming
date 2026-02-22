@@ -490,7 +490,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       }
   };
 
-  const sortedEvents = useMemo(() => {
+  const filteredEvents = useMemo(() => {
       const today = new Date();
       today.setHours(0,0,0,0);
       const currentUserId = user ? String(user.id) : null;
@@ -572,17 +572,46 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       return !isAfter(eDate, subDays(new Date(), 1));
   }, [showJoinModal.event]);
 
+
+
+  useEffect(() => {
+    const fetchTitles = async () => {
+      const newTitles = {};
+      for (const event of filteredEvents) {
+        if (event.location && event.location.startsWith('http') && !urlTitles[event.location]) {
+          try {
+            const response = await fetch(`/api/url-title?url=${encodeURIComponent(event.location)}`);
+            if (response.ok) {
+              const data = await response.json();
+              newTitles[event.location] = data.title || new URL(event.location).hostname.replace('www.', '');
+            } else {
+              newTitles[event.location] = new URL(event.location).hostname.replace('www.', '');
+            }
+          } catch (error) {
+            console.error('Error fetching URL title:', error);
+            newTitles[event.location] = new URL(event.location).hostname.replace('www.', '');
+          }
+        }
+      }
+      if (Object.keys(newTitles).length > 0) {
+        setUrlTitles(prev => ({ ...prev, ...newTitles }));
+      }
+    };
+
+    if (filteredEvents.length > 0) {
+      fetchTitles();
+    }
+  }, [filteredEvents]);
+
   const paddingTopClass = isFilterExpanded ? 'pt-[270px]' : 'pt-[110px]';
+
+  const [urlTitles, setUrlTitles] = useState({});
 
   const formatLocation = (loc: string) => {
       if (!loc) return '';
       if (loc.startsWith('http')) {
-          try {
-              const url = new URL(loc);
-              return url.hostname.replace('www.', '');
-          } catch (e) {
-              return 'Link';
-          }
+          if (urlTitles[loc]) return urlTitles[loc];
+          return 'Loading...';
       }
       return loc;
   };
@@ -716,8 +745,8 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                    <Loader2 className="animate-spin text-chiachia-green/40" size={24} />
                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-700">Syncing Arena</span>
                </div>
-           ) : sortedEvents.length > 0 ? (
-               sortedEvents.map(event => {
+           ) : filteredEvents.length > 0 ? (
+               filteredEvents.map(event => {
                    const eDate = parseISO(event.date);
                    const isPast = !isAfter(eDate, subDays(new Date(), 1));
                    const hasJoined = user && event.participants?.some(p => String(p.people_id || p.id) === String(user.id));

@@ -80,16 +80,11 @@ export const parseUserRoles = (user: any): string[] => {
       return JSON.parse(user.roles);
     } catch (e) {
       console.error("Role parsing error", e);
-      // Fallback: 如果解析失敗但有舊的 role 欄位
-      if (user.role === 'admin') return [ROLES.COACH, ROLES.RIDER];
-      return [ROLES.RIDER];
+      return [];
     }
   }
-
-  // Fallback: 舊系統兼容
-  if (user.role === 'admin') return [ROLES.COACH, ROLES.RIDER];
   
-  return [ROLES.RIDER]; // Default
+  return []; // Default
 };
 
 // 核心檢查函式

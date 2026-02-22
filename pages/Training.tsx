@@ -33,7 +33,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   
   const currentUser = api.getUser();
   const canRecord = currentUser && (hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.AIDE) || hasRole(currentUser, ROLES.DEV));
-  const isAdmin = currentUser?.role === 'admin' || hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.DEV);
+    const isAdmin = hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.DEV);
 
   const filteredPeople = useMemo(() => {
     return people.filter((p: any) => hasRole(p, ROLES.RIDER) && !hasRole(p, ROLES.DEV));

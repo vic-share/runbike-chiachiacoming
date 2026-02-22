@@ -392,7 +392,7 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
 
     const selectablePeople = useMemo(() => {
         return people
-            .filter(p => !p.is_hidden && p.role !== 'admin' && hasRole(p, ROLES.RIDER)) // Only riders
+            .filter(p => !p.is_hidden && hasRole(p, ROLES.RIDER)) // Only riders
             .sort((a:any, b:any) => a.name.localeCompare(b.name));
     }, [people]);
 

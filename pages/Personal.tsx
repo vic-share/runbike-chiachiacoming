@@ -90,7 +90,7 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
       <section className="space-y-4">
           <div className="text-[10px] font-black text-zinc-600 tracking-[0.3em] uppercase">Switch Rider</div>
           <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4">
-              {people.filter((p:any) => !p.is_hidden && p.role !== 'admin').map((p: any) => (
+                            {people.filter((p:any) => !p.is_hidden && !hasRole(p, ROLES.ADMIN)).map((p: any) => (
                   <button 
                     key={p.id} 
                     onClick={() => onSelectPerson(p.id)}

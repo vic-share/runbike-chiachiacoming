@@ -327,13 +327,13 @@ export default {
       // --- People API ---
       if (path === "/api/people") {
           if (method === "GET") {
-              return Response.json((await getDB().prepare(`SELECT id, team_id, name, role, roles, birthday, avatar_url as s_url, full_photo_url as b_url, bio as myword, is_retired as is_hidden, full_name FROM People WHERE team_id = ${TEAM_ID}`).all()).results, { headers: corsHeaders });
+              return Response.json((await getDB().prepare(`SELECT id, team_id, name, roles, birthday, avatar_url as s_url, full_photo_url as b_url, bio as myword, is_retired as is_hidden, full_name FROM People WHERE team_id = ${TEAM_ID}`).all()).results, { headers: corsHeaders });
           }
           if (method === "POST") {
-              const { name, full_name, role, birthday, roles } = await request.json();
+              const { name, full_name, birthday, roles } = await request.json();
               // Default password: 123456
               const defaultPass = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92";
-              const res = await getDB().prepare("INSERT INTO People (team_id, name, full_name, role, birthday, roles, password) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(TEAM_ID, name, full_name, role || 'parent', birthday || null, JSON.stringify(roles || ['RIDER']), defaultPass).run();
+              const res = await getDB().prepare("INSERT INTO People (team_id, name, full_name, birthday, roles, password) VALUES (?, ?, ?, ?, ?, ?)").bind(TEAM_ID, name, full_name, birthday || null, JSON.stringify(roles || ['RIDER']), defaultPass).run();
               return Response.json({ success: true, id: res.meta.last_row_id }, { headers: corsHeaders });
           }
       }
@@ -413,6 +413,19 @@ export default {
           }
       }
 
+      // --- Settings: Bank Account ---
+      if (path === "/api/settings/bank-account") {
+          if (method === "GET") {
+              const account = await env.RUNBIKE_KV.get("BANK_ACCOUNT", { type: "json" });
+              return Response.json(account || { bank_code: '', account_number: '' }, { headers: corsHeaders });
+          }
+          if (method === "POST") {
+              const body = await request.json();
+              await env.RUNBIKE_KV.put("BANK_ACCOUNT", JSON.stringify(body));
+              return Response.json({ success: true }, { headers: corsHeaders });
+          }
+      }
+
       // --- Settings: Push Templates ---
       if (path === "/api/settings/push-templates") {
                     if (method === "GET") return Response.json(await env.RUNBIKE_KV.get("PUSH_TEMPLATES", { type: "json" }) || {}, { headers: corsHeaders });
@@ -421,23 +434,59 @@ export default {
 
       // --- Finance Report ---
       if (path === "/api/finance/report") {
-          const month = url.searchParams.get('month'); // YYYY-MM format
+          const range = url.searchParams.get('month'); // Reusing 'month' param for range string to keep API simple or use a new param
           let whereClause = `WHERE team_id = ${TEAM_ID}`;
           const params = [];
           
-          if (month) {
+          // Range logic: 1W, 1M, 3M, ALL, CUSTOM. Default to 1M if not specified or if it looks like a month string
+          let startDate = '';
+          let endDate = '';
+          
+          if (range === '1W') {
+              startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          } else if (range === '1M') {
+              startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          } else if (range === '3M') {
+              startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          } else if (range && range.startsWith('CUSTOM:')) {
+              const parts = range.split(':');
+              if (parts.length === 3) {
+                  startDate = parts[1];
+                  endDate = parts[2];
+              }
+          } else if (range && range.match(/^\\d{4}-\\d{2}$/)) {
+              // Specific month
               whereClause += ` AND strftime('%Y-%m', created_at) = ?`;
-              params.push(month);
+              params.push(range);
+          } else if (range === 'ALL') {
+              // No date filter
+          } else {
+              // Default 1M
+              startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          }
+      
+          if (startDate) {
+              whereClause += ` AND date(created_at) >= ?`;
+              params.push(startDate);
+          }
+          
+          if (endDate) {
+              whereClause += ` AND date(created_at) <= ?`;
+              params.push(endDate);
           }
 
           const revenue = await getDB().prepare(`SELECT SUM(amount_cash) as total FROM FinancialRecords ${whereClause} AND transaction_type = 'DEPOSIT'`).bind(...params).first();
           const sold = await getDB().prepare(`SELECT SUM(amount_ticket) as total FROM FinancialRecords ${whereClause} AND transaction_type = 'DEPOSIT'`).bind(...params).first();
           const used = await getDB().prepare(`SELECT SUM(ABS(amount_ticket)) as total FROM FinancialRecords ${whereClause} AND transaction_type = 'SPEND'`).bind(...params).first();
 
+          // Daily Stats for Chart
+          const daily = await getDB().prepare(`SELECT date(created_at) as date, SUM(amount_cash) as amount, SUM(amount_ticket) as tickets FROM FinancialRecords ${whereClause} AND transaction_type = 'DEPOSIT' GROUP BY date(created_at) ORDER BY date ASC`).bind(...params).all();
+
           return Response.json({
               total_revenue: revenue?.total || 0,
               tickets_sold: sold?.total || 0,
-              tickets_used: used?.total || 0
+              tickets_used: used?.total || 0,
+              daily_stats: daily.results
           }, { headers: corsHeaders });
       }
 
@@ -457,7 +506,7 @@ export default {
       // --- Core Data APIs ---
       if (path === "/api/login" && method === "POST") {
         const { id, password } = await request.json();
-        const person = await getDB().prepare(`SELECT id, team_id, name, role, roles, password, birthday, avatar_url as s_url, full_photo_url as b_url, bio as myword, is_retired as is_hidden, full_name, created_at FROM People WHERE id = ? AND team_id = ?`).bind(id, TEAM_ID).first();
+        const person = await getDB().prepare(`SELECT id, team_id, name, roles, password, birthday, avatar_url as s_url, full_photo_url as b_url, bio as myword, is_retired as is_hidden, full_name, created_at FROM People WHERE id = ? AND team_id = ?`).bind(id, TEAM_ID).first();
         if (!person) return Response.json({ success: false, msg: "查無此人" }, { headers: corsHeaders });
         const inputHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(password || '').trim())).then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
         const storedPass = person.password ? String(person.password) : null;

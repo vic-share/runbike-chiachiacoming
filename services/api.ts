@@ -392,5 +392,16 @@ export const api = {
           method: 'POST',
           body: JSON.stringify({ user_id: userId })
       });
+  },
+
+  fetchBankAccount: async () => {
+      return await safeFetchJson('/settings/bank-account');
+  },
+
+  saveBankAccount: async (data: any) => {
+      return await safeFetchJson('/settings/bank-account', {
+          method: 'POST',
+          body: JSON.stringify(data)
+      });
   }
 };
