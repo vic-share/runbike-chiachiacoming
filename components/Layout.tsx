@@ -130,7 +130,23 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, titl
       
       if (n.action_link) {
           setShowNotifications(false);
-          const page = n.action_link.replace('/', '');
+          
+          let page = n.action_link;
+          
+          // Handle /?page=settings&target=coach_requests format
+          if (page.includes('?page=')) {
+              const urlParams = new URLSearchParams(page.split('?')[1]);
+              const pageParam = urlParams.get('page');
+              const targetParam = urlParams.get('target');
+              
+              if (pageParam) {
+                  page = targetParam ? `${pageParam}/${targetParam}` : pageParam;
+              }
+          }
+          
+          // Remove leading slash if present
+          page = page.replace(/^\//, '');
+          
           onNavigate(page || 'dashboard');
       }
   };

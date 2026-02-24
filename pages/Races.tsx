@@ -186,12 +186,13 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   };
 
   const resetCreateForm = () => {
+      const defaultSeries = raceGroups.filter((g: any) => g.name !== '(None)' && g.series_name !== '(None)')[0];
       setCreateForm({
           id: '',
           name: '',
           date: format(new Date(), 'yyyy-MM-dd'),
           location: '',
-          series_id: '',
+          series_id: defaultSeries ? String(defaultSeries.id) : '',
           url: ''
       });
       setIsEditMode(false);
@@ -344,6 +345,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   const toggleBulkSelect = (id: string, isSingleMode: boolean) => {
       if (isSingleMode) {
           setBulkSelectedIds([id]);
+          setJoinForm(prev => ({ ...prev, people_id: id }));
       } else {
           setBulkSelectedIds(prev => 
               prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
@@ -563,7 +565,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
 
   const isRiderMode = !canManage;
   const selectablePeople = useMemo(() => {
-      return people.filter((p: any) => !p.is_hidden && p.role !== 'admin').sort((a:any, b:any) => a.name.localeCompare(b.name));
+      return people.filter((p: any) => !p.is_hidden && p.role !== 'admin' && (p.roles?.includes(ROLES.RIDER) || p.roles?.includes(ROLES.AIDE))).sort((a:any, b:any) => a.name.localeCompare(b.name));
   }, [people]);
 
   const isModalEventPast = useMemo(() => {
@@ -1015,9 +1017,12 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                       <div className="space-y-1">
                           <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">系列賽</label>
                           <div className="relative">
-                              <select value={createForm.series_id} onChange={e => setCreateForm({...createForm, series_id: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none appearance-none focus:border-chiachia-green/50">
-                                  <option value="">(無)</option>
-                                  {raceGroups.map((g: any) => <option key={g.id} value={g.id}>{g.name || g.series_name}</option>)}
+                              <select 
+                                  value={createForm.series_id} 
+                                  onChange={e => setCreateForm({...createForm, series_id: e.target.value})} 
+                                  className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none appearance-none focus:border-chiachia-green/50"
+                              >
+                                  {raceGroups.filter((g: any) => g.name !== '(None)' && g.series_name !== '(None)').map((g: any) => <option key={g.id} value={g.id}>{g.name || g.series_name}</option>)}
                               </select>
                               <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"/>
                           </div>
@@ -1082,20 +1087,22 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                   <div className="space-y-4">
                       <div className="space-y-1">
                           <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">選手</label>
-                          {canManage && !showJoinModal.participant && !isModalEventPast ? (
+                          {canManage && !showJoinModal.participant ? (
                               <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto p-1 bg-zinc-900/50 rounded-xl border border-white/5">
                                   {selectablePeople.map((p: any) => {
+                                      const isAlreadyJoined = showJoinModal.event?.participants?.some(part => String(part.people_id || part.id) === String(p.id));
                                       const isSelected = bulkSelectedIds.includes(String(p.id));
                                       return (
                                           <button 
                                               key={p.id} 
-                                              onClick={() => toggleBulkSelect(String(p.id), false)}
-                                              className={`flex flex-col items-center gap-1 p-2 rounded-lg border transition-all ${isSelected ? 'bg-chiachia-green/10 border-chiachia-green' : 'bg-zinc-800 border-white/5 opacity-60'}`}
+                                              onClick={() => !isAlreadyJoined && toggleBulkSelect(String(p.id), isModalEventPast)}
+                                              className={`flex flex-col items-center gap-1 p-2 rounded-lg border transition-all ${isAlreadyJoined ? 'bg-chiachia-green/10 border-chiachia-green cursor-not-allowed' : isSelected ? 'bg-chiachia-green/10 border-chiachia-green' : 'bg-zinc-800 border-white/5 opacity-60'}`}
+                                              disabled={isAlreadyJoined}
                                           >
-                                              <div className={`w-8 h-8 rounded-full overflow-hidden ${isSelected ? 'ring-2 ring-chiachia-green' : ''}`}>
+                                              <div className={`w-8 h-8 rounded-full overflow-hidden ${isAlreadyJoined ? 'ring-2 ring-chiachia-green' : isSelected ? 'ring-2 ring-chiachia-green' : ''}`}>
                                                   {p.s_url ? <img src={p.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-black flex items-center justify-center text-[8px]">{p.name[0]}</div>}
                                               </div>
-                                              <span className={`text-[9px] font-bold truncate w-full text-center ${isSelected ? 'text-white' : 'text-zinc-500'}`}>{p.name}</span>
+                                              <span className={`text-[9px] font-bold truncate w-full text-center ${isAlreadyJoined || isSelected ? 'text-white' : 'text-zinc-500'}`}>{p.name}</span>
                                           </button>
                                       );
                                   })}

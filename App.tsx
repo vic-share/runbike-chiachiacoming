@@ -208,13 +208,38 @@ const App: React.FC = () => {
         navigator.clearAppBadge().catch(() => {});
     }
 
+    // Parse page for deep links
+    let targetPage = page;
+    let targetId: string | null = null;
+
+    if (page.includes('/')) {
+        const parts = page.split('/');
+        targetPage = parts[0];
+        targetId = parts[1];
+    }
+
+    // Handle Races Deep Link
+    if (targetPage === 'races' && targetId) {
+        setTargetRaceId(targetId);
+    }
+    
+    // Handle Settings Deep Link
+    if (targetPage === 'settings' && targetId) {
+        setSettingsTarget(targetId);
+    }
+
+    // Handle Training Deep Link
+    if (targetPage === 'training' && targetId) {
+        setJumpDate(targetId);
+    }
+
     // Require Login for Races AND Courses
-    if (page === 'races' || page === 'courses') {
+    if (targetPage === 'races' || targetPage === 'courses') {
         const user = api.getUser();
         if (!user || !user.id) {
             setShowRedirectModal(true);
             setTimeout(() => {
-                setReturnPage(page);
+                setReturnPage(page); // Keep full path for return
                 setCurrentPage('settings');
                 setShowRedirectModal(false);
             }, 1500);
@@ -222,7 +247,7 @@ const App: React.FC = () => {
         }
     }
 
-    if (page === 'personal') {
+    if (targetPage === 'personal') {
       let foundAuthId: string | null = null;
       for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
@@ -242,7 +267,7 @@ const App: React.FC = () => {
           setSelectedPersonId(activePeople[activePeople.length - 1].id);
       }
     }
-    setCurrentPage(page);
+    setCurrentPage(targetPage);
   };
 
   const handleLoginSuccess = () => {

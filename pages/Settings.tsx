@@ -3,11 +3,12 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import { uploadImage } from '../services/supabase';
-import { User, Lock, KeyRound, LogIn, ShieldCheck, Wallet, LayoutGrid, Flag, Activity, X, LogOut, ArrowLeft, Plus, Check, Trash2, Camera, UserCircle2, Edit2, Users, MapPin, DollarSign, AlertTriangle, RotateCcw, CheckCircle2, MessageCircle, Calendar, Loader2, LockKeyhole, RefreshCw, Move, ZoomIn, Bell, BellRing, Radio, Send, Megaphone, Trophy, CalendarCheck, CalendarX, FileText, ToggleLeft, ToggleRight, Clock, ChevronRight, Settings as SettingsIcon, HelpCircle, TestTube2, Flame, Layers, Star, Zap, Repeat, Ticket, Play, BellOff, CalendarDays, Ban, CreditCard, ChevronDown, ChevronUp, Banknote, FileBarChart, History, Image as ImageIcon, ScrollText, Layers as InventoryIcon, Tag, BookOpen, Power, Filter, XCircle, Share2, PenTool } from 'lucide-react';
+import { User, Lock, KeyRound, LogIn, ShieldCheck, Wallet, LayoutGrid, Flag, Activity, X, LogOut, ArrowLeft, Plus, Check, Trash2, Camera, UserCircle2, Edit2, Users, MapPin, DollarSign, AlertTriangle, RotateCcw, CheckCircle2, MessageCircle, Calendar, Loader2, LockKeyhole, RefreshCw, Move, ZoomIn, Bell, BellRing, Radio, Send, Megaphone, Trophy, CalendarCheck, CalendarX, FileText, ToggleLeft, ToggleRight, Clock, ChevronRight, Settings as SettingsIcon, HelpCircle, TestTube2, Flame, Layers, Star, Zap, Repeat, Ticket, Play, BellOff, CalendarDays, Ban, CreditCard, ChevronDown, ChevronUp, Banknote, FileBarChart, History, Image as ImageIcon, ScrollText, Layers as InventoryIcon, Tag, BookOpen, Power, Filter, XCircle, Share2, PenTool, TrendingUp, TrendingDown } from 'lucide-react';
 import { LookupItem, TicketWallet, CourseTemplate, PushTemplates, ClassSession, TicketPricing, PricingTier, FinancialRecord, FinancialReport } from '../types';
 import { format, differenceInYears, parseISO, addYears, endOfMonth, addMonths, startOfMonth, isSameMonth, subDays, addDays, subMonths, isWithinInterval, startOfDay, endOfDay, isValid } from 'date-fns';
 import { SimpleImageCropper } from '../components/SimpleImageCropper';
 import { hasPermission, hasRole, PERMISSIONS, ROLES } from '../utils/auth';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const SimpleAreaChart = ({ data, color = "#39e75f", showTickets = false }: any) => {
     if (!data || data.length === 0) return null;
@@ -15,42 +16,38 @@ const SimpleAreaChart = ({ data, color = "#39e75f", showTickets = false }: any) 
     const dataKey = showTickets ? 'tickets' : 'amount';
     const chartColor = showTickets ? '#60a5fa' : color; // Blue for tickets, Green for amount
 
-    const maxVal = Math.max(...data.map((d:any) => d[dataKey] || 0));
-    const minVal = 0; 
-    const range = maxVal - minVal || 1;
-    
-    const points = data.map((d:any, i:number) => {
-        const val = d[dataKey] || 0;
-        const x = (i / (data.length - 1)) * 100;
-        const y = 100 - ((val - minVal) / range) * 100;
-        return `${x},${y}`;
-    });
-    
-    const polylinePoints = points.join(' ');
-    const areaPoints = `0,100 ${polylinePoints} 100,100`;
-    
     return (
-        <div className="w-full h-full flex flex-col">
-            <div className="flex-1 relative min-h-0">
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+        <div className="w-full h-full">
+            <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={data}>
                     <defs>
-                        <linearGradient id={`chartGradient-${dataKey}`} x1="0" x2="0" y1="0" y2="1">
-                            <stop offset="0%" stopColor={chartColor} stopOpacity="0.3" />
-                            <stop offset="100%" stopColor={chartColor} stopOpacity="0" />
+                        <linearGradient id={`color${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={chartColor} stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor={chartColor} stopOpacity={0}/>
                         </linearGradient>
                     </defs>
-                    <line x1="0" y1="0" x2="100" y2="0" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" strokeDasharray="2" vectorEffect="non-scaling-stroke" />
-                    <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" strokeDasharray="2" vectorEffect="non-scaling-stroke" />
-                    <line x1="0" y1="100" x2="100" y2="100" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" strokeDasharray="2" vectorEffect="non-scaling-stroke" />
-                    
-                    <polygon points={areaPoints} fill={`url(#chartGradient-${dataKey})`} />
-                    <polyline points={polylinePoints} fill="none" stroke={chartColor} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" />
-                </svg>
-            </div>
-            <div className="flex justify-between text-[9px] text-zinc-500 mt-2 font-mono">
-                <span>{format(parseISO(data[0].date), 'MM/dd')}</span>
-                <span>{format(parseISO(data[data.length-1].date), 'MM/dd')}</span>
-            </div>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+                    <XAxis 
+                        dataKey="date" 
+                        hide={true} 
+                    />
+                    <Tooltip 
+                        contentStyle={{ backgroundColor: '#18181b', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                        itemStyle={{ color: '#fff', fontSize: '12px', fontWeight: 'bold' }}
+                        labelStyle={{ color: '#a1a1aa', fontSize: '10px', marginBottom: '4px' }}
+                        formatter={(value: any) => [showTickets ? `${value} tickets` : `$${value}`, showTickets ? 'Sold' : 'Revenue']}
+                        labelFormatter={(label) => format(parseISO(label), 'yyyy-MM-dd')}
+                    />
+                    <Area 
+                        type="monotone" 
+                        dataKey={dataKey} 
+                        stroke={chartColor} 
+                        fillOpacity={1} 
+                        fill={`url(#color${dataKey})`} 
+                        strokeWidth={2}
+                    />
+                </AreaChart>
+            </ResponsiveContainer>
         </div>
     );
 };
@@ -408,6 +405,9 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   
   useEffect(() => {
       if (adminView === 'tickets' && ticketView === 'report') {
+          // If it's not custom, or if it IS custom but we want to ensure it loads on view enter
+          // Actually, if it's CUSTOM, we usually wait for the user to click "Check"
+          // but if they just switched TO a preset, we should load it.
           if (reportDateRange !== 'CUSTOM') {
               loadFinancialReport(reportDateRange);
           }
@@ -799,7 +799,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
               }
           }
           if(adminView === 'players') { 
-              const sortedPeople = people.filter((p: any) => !p.is_hidden).sort(sortPeopleByRole); 
+              const sortedPeople = people.filter((p: any) => !p.is_hidden && p.roles?.includes(ROLES.RIDER)).sort(sortPeopleByRole); 
               return ( 
                 <> 
                     <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> 
@@ -1000,58 +1000,146 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                          <div className="px-4 py-4 pb-28 space-y-4">
                              {financialReport && (
                                  <>
+                                     {/* Date Filter - Moved to Top */}
+                                     <div className="flex flex-col items-end gap-2 mb-2">
+                                         <div className="flex bg-zinc-900 rounded-lg p-1 border border-white/5 shadow-lg">
+                                             {(['1W', '1M', '3M', 'ALL', 'CUSTOM'] as const).map(range => (
+                                                 <button 
+                                                     key={range}
+                                                     onClick={() => {
+                                                         setReportDateRange(range);
+                                                         if (range !== 'CUSTOM') {
+                                                             loadFinancialReport(range);
+                                                         }
+                                                     }}
+                                                     className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${reportDateRange === range ? 'bg-white text-black shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                 >
+                                                     {range}
+                                                 </button>
+                                             ))}
+                                         </div>
+                                         {reportDateRange === 'CUSTOM' && (
+                                             <div className="flex gap-2 bg-zinc-900 p-2 rounded-xl border border-white/5 shadow-lg animate-fade-in">
+                                                 <input type="date" value={customDateStart} onChange={e => setCustomDateStart(e.target.value)} className="bg-zinc-950 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white outline-none focus:border-chiachia-green/50"/>
+                                                 <span className="text-zinc-500 self-center">-</span>
+                                                 <input type="date" value={customDateEnd} onChange={e => setCustomDateEnd(e.target.value)} className="bg-zinc-950 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white outline-none focus:border-chiachia-green/50"/>
+                                                 <button onClick={() => loadFinancialReport(`CUSTOM:${customDateStart}:${customDateEnd}`)} className="bg-chiachia-green text-black px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-glow-green hover:scale-105 transition-transform"><Check size={14}/></button>
+                                             </div>
+                                         )}
+                                     </div>
+
                                      <div className="grid grid-cols-2 gap-4">
-                                         <div className="glass-card p-5 rounded-3xl col-span-2"> <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5 mb-1"><Banknote size={12} className="text-chiachia-green"/> Total Revenue</div> <div className="text-3xl font-black text-white font-mono">${financialReport.total_revenue}</div> </div>
-                                         <div className="glass-card p-5 rounded-3xl"> <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Sold</div> <div className="text-2xl font-black text-blue-400 font-mono">{financialReport.tickets_sold} <span className="text-[10px] text-zinc-600">tickets</span></div> </div>
-                                         <div className="glass-card p-5 rounded-3xl"> <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Used</div> <div className="text-2xl font-black text-rose-400 font-mono">{financialReport.tickets_used} <span className="text-[10px] text-zinc-600">tickets</span></div> </div>
+                                         <div className="glass-card p-5 rounded-3xl col-span-2 border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.3)]"> 
+                                            <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5 mb-1"><Banknote size={12} className="text-chiachia-green"/> Total Revenue</div> 
+                                            <div className="text-4xl font-black text-white font-mono tracking-tight">${financialReport.total_revenue.toLocaleString()}</div> 
+                                         </div>
+                                         <div className="glass-card p-5 rounded-3xl border border-white/10"> 
+                                            <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Sold</div> 
+                                            <div className="text-2xl font-black text-blue-400 font-mono">{financialReport.tickets_sold} <span className="text-[10px] text-zinc-600">tickets</span></div> 
+                                         </div>
+                                         <div className="glass-card p-5 rounded-3xl border border-white/10"> 
+                                            <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Used</div> 
+                                            <div className="text-2xl font-black text-rose-400 font-mono">{financialReport.tickets_used} <span className="text-[10px] text-zinc-600">tickets</span></div> 
+                                         </div>
                                      </div>
                                      
                                      {/* Financial Chart */}
                                      {chartData.length > 0 ? (
-                                         <div className="glass-card p-4 rounded-3xl border border-white/10">
-                                             <div className="flex justify-between items-center mb-4">
-                                                 <div className="text-xs font-black text-zinc-500 uppercase tracking-widest">Revenue Trend</div>
-                                                 {/* Date Filter */}
-                                                 <div className="flex flex-col items-end gap-2">
-                                                     <div className="flex bg-zinc-900 rounded-lg p-1 border border-white/5">
-                                                         {(['1W', '1M', '3M', 'ALL', 'CUSTOM'] as const).map(range => (
-                                                             <button 
-                                                                 key={range}
-                                                                 onClick={() => setReportDateRange(range)}
-                                                                 className={`px-2 py-1 rounded text-[9px] font-black uppercase transition-all ${reportDateRange === range ? 'bg-white text-black' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                             >
-                                                                 {range}
-                                                             </button>
-                                                         ))}
-                                                     </div>
-                                                     {reportDateRange === 'CUSTOM' && (
-                                                         <div className="flex gap-2">
-                                                             <input type="date" value={customDateStart} onChange={e => setCustomDateStart(e.target.value)} className="bg-zinc-900 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white outline-none"/>
-                                                             <span className="text-zinc-500">-</span>
-                                                             <input type="date" value={customDateEnd} onChange={e => setCustomDateEnd(e.target.value)} className="bg-zinc-900 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white outline-none"/>
-                                                             <button onClick={() => loadFinancialReport(`CUSTOM:${customDateStart}:${customDateEnd}`)} className="bg-chiachia-green text-black px-2 py-1 rounded-lg text-[10px] font-bold"><Check size={12}/></button>
-                                                         </div>
-                                                     )}
+                                         <div className="glass-card p-5 rounded-3xl border border-white/10 mt-2">
+                                             <div className="flex justify-between items-center mb-6">
+                                                 <div className="flex items-center gap-2">
+                                                    <div className="w-1 h-4 bg-chiachia-green rounded-full"></div>
+                                                    <div className="text-xs font-black text-white uppercase tracking-widest">Revenue Trend</div>
                                                  </div>
                                              </div>
-                                             <div className="flex flex-col gap-4">
-                                                 <div className="h-32 w-full">
-                                                     <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Revenue</div>
+                                             <div className="flex flex-col gap-8">
+                                                 <div className="h-40 w-full">
+                                                     <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2 pl-1">Revenue History</div>
                                                      <SimpleAreaChart data={chartData} />
                                                  </div>
-                                                 <div className="h-32 w-full">
-                                                     <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Tickets Sold</div>
+                                                 <div className="h-40 w-full border-t border-white/5 pt-6">
+                                                     <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2 pl-1">Ticket Sales</div>
                                                      <SimpleAreaChart data={chartData} showTickets={true} />
                                                  </div>
                                              </div>
                                          </div>
                                      ) : (
-                                         <div className="p-8 text-center text-zinc-500 text-xs font-black uppercase tracking-widest border border-dashed border-white/10 rounded-2xl">
+                                         <div className="p-12 text-center text-zinc-500 text-xs font-black uppercase tracking-widest border border-dashed border-white/10 rounded-3xl bg-zinc-900/20">
                                              No Chart Data Available
                                          </div>
                                      )}
-                                 </>
-                             )}
+
+                                      {/* Monthly Overview (Last 12 Months) */}
+                                      <div className="glass-card p-5 rounded-3xl border border-white/10 mt-6 shadow-xl">
+                                          <div className="flex items-center justify-between mb-6">
+                                              <div className="flex items-center gap-2">
+                                                  <div className="w-1 h-4 bg-blue-400 rounded-full"></div>
+                                                  <div className="text-xs font-black text-white uppercase tracking-widest">Annual Overview</div>
+                                              </div>
+                                              <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest bg-zinc-900 px-2 py-1 rounded-md border border-white/5">Last 12 Months</div>
+                                          </div>
+                                          
+                                          {financialReport.monthly_stats && financialReport.monthly_stats.length > 0 ? (
+                                              <>
+                                                  <div className="overflow-hidden rounded-2xl border border-white/5 bg-zinc-950/50">
+                                                      <table className="w-full text-left border-collapse">
+                                                          <thead>
+                                                              <tr className="bg-zinc-900/80 border-b border-white/10">
+                                                                  <th className="p-3 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Month</th>
+                                                                  <th className="p-3 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Revenue</th>
+                                                                  <th className="p-3 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Sold</th>
+                                                              </tr>
+                                                          </thead>
+                                                          <tbody className="divide-y divide-white/5">
+                                                              {financialReport.monthly_stats.map((stat: any) => (
+                                                                  <tr key={stat.month} className="hover:bg-white/5 transition-colors">
+                                                                      <td className="p-3">
+                                                                          <div className="flex items-center gap-2">
+                                                                              <div className="w-8 h-8 rounded-lg bg-zinc-800 flex flex-col items-center justify-center border border-white/5">
+                                                                                  <span className="text-[8px] font-black text-zinc-500 uppercase leading-none">{format(parseISO(stat.month + '-01'), 'MMM')}</span>
+                                                                                  <span className="text-[10px] font-black text-white leading-none mt-0.5">{format(parseISO(stat.month + '-01'), 'yy')}</span>
+                                                                              </div>
+                                                                              <span className="text-xs font-bold text-zinc-400 font-mono">{stat.month}</span>
+                                                                          </div>
+                                                                      </td>
+                                                                      <td className="p-3 text-right">
+                                                                          <div className="text-sm font-black text-white font-mono">${stat.revenue.toLocaleString()}</div>
+                                                                      </td>
+                                                                      <td className="p-3 text-right">
+                                                                          <div className="text-sm font-black text-blue-400 font-mono">{stat.sold}</div>
+                                                                      </td>
+                                                                  </tr>
+                                                              ))}
+                                                          </tbody>
+                                                      </table>
+                                                  </div>
+                                                  
+                                                  <div className="mt-4 p-3 bg-zinc-900/30 rounded-xl border border-white/5 flex justify-between items-center">
+                                                      <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Annual Total</div>
+                                                      <div className="flex gap-4">
+                                                          <div className="text-right">
+                                                              <div className="text-xs font-black text-white font-mono">
+                                                                  ${financialReport.monthly_stats.reduce((acc: number, s: any) => acc + s.revenue, 0).toLocaleString()}
+                                                              </div>
+                                                              <div className="text-[8px] font-bold text-zinc-600 uppercase tracking-tighter">Total Revenue</div>
+                                                          </div>
+                                                          <div className="text-right">
+                                                              <div className="text-xs font-black text-blue-400 font-mono">
+                                                                  {financialReport.monthly_stats.reduce((acc: number, s: any) => acc + s.sold, 0)}
+                                                              </div>
+                                                              <div className="text-[8px] font-bold text-zinc-600 uppercase tracking-tighter">Total Sold</div>
+                                                          </div>
+                                                      </div>
+                                                  </div>
+                                              </>
+                                          ) : (
+                                              <div className="p-8 text-center text-zinc-500 text-[10px] font-black uppercase tracking-widest border border-dashed border-white/5 rounded-2xl bg-zinc-900/20">
+                                                  No Monthly Data Available
+                                              </div>
+                                          )}
+                                      </div>
+                                  </>
+                              )}
                          </div>
                      </>
                  );

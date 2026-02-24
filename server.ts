@@ -281,6 +281,7 @@ async function deductTickets(peopleId, type, amount, allowOverdraft = false, ses
 
     const isOverdraft = transaction();
     await logFinance({ peopleId, type: 'SPEND', amountTicket: -amount, ticketType: type, note: `課程扣票: ${sessionName}` });
+    await createNotification(peopleId, `扣票通知: ${sessionName} (${amount}張)`, '/?page=settings&target=rider_history');
     return { success: true, overdraft: isOverdraft };
 }
 
@@ -290,6 +291,7 @@ async function refundTickets(peopleId, type, amount, reason = "") {
     const expiryStr = expiry.toISOString().split('T')[0];
     db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).run(TEAM_ID, peopleId, type, amount, amount, expiryStr);
     await logFinance({ peopleId, type: 'REFUND', amountTicket: amount, ticketType: type, note: `課程退票: ${reason}` });
+    await createNotification(peopleId, `退票通知: ${reason} (${amount}張)`, '/?page=settings&target=rider_history');
 }
 
 // --- API Routes ---
@@ -435,7 +437,7 @@ app.post('/api/settings/bank-account', async (req, res) => {
 });
 
 app.get('/api/finance/report', (req, res) => {
-    const range = req.query.month; // Reusing 'month' param for range string to keep API simple or use a new param
+    const range = String(req.query.month || ''); // Reusing 'month' param for range string to keep API simple or use a new param
     let whereClause = `WHERE team_id = ${TEAM_ID}`;
     const params = [];
     
@@ -483,11 +485,43 @@ app.get('/api/finance/report', (req, res) => {
     // Daily Stats for Chart
     const daily = db.prepare(`SELECT date(created_at) as date, SUM(amount_cash) as amount, SUM(amount_ticket) as tickets FROM FinancialRecords ${whereClause} AND transaction_type = 'DEPOSIT' GROUP BY date(created_at) ORDER BY date ASC`).all(...params);
 
+    // Monthly Stats for the last year (Fixed range: last 12 months)
+    const now = new Date();
+    const months = [];
+    let y = now.getFullYear();
+    let m = now.getMonth() + 1; // 1-12
+    
+    for (let i = 0; i < 12; i++) {
+        months.unshift(`${y}-${String(m).padStart(2, '0')}`);
+        m--;
+        if (m === 0) {
+            m = 12;
+            y--;
+        }
+    }
+    
+    const oneYearAgo = months[0] + '-01';
+    
+    const monthlyData = db.prepare(`
+        SELECT strftime('%Y-%m', created_at) as month, 
+               SUM(amount_cash) as revenue, 
+               SUM(amount_ticket) as sold 
+        FROM FinancialRecords 
+        WHERE team_id = ${TEAM_ID} 
+          AND transaction_type = 'DEPOSIT' 
+          AND date(created_at) >= ?
+        GROUP BY strftime('%Y-%m', created_at)
+    `).all(oneYearAgo);
+
+    const monthlyMap = new Map(monthlyData.map((m: any) => [m.month, m]));
+    const monthly = months.map(m => monthlyMap.get(m) || { month: m, revenue: 0, sold: 0 });
+
     res.json({
         total_revenue: revenue?.total || 0,
         tickets_sold: sold?.total || 0,
         tickets_used: used?.total || 0,
-        daily_stats: daily
+        daily_stats: daily,
+        monthly_stats: monthly
     });
 });
 
@@ -748,6 +782,10 @@ app.get('/api/tickets/wallets', (req, res) => {
 app.post('/api/tickets/purchase', async (req, res) => {
     const { people_id, type, amount, last_5_digits, total_price } = req.body;
     db.prepare(`INSERT INTO TicketRequests (team_id, people_id, type, amount, last_5_digits, total_price) VALUES (?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, type, amount, last_5_digits, total_price || 0);
+    
+    const person = db.prepare("SELECT name FROM People WHERE id = ?").get(people_id);
+    await createNotificationForRole('COACH', `購票申請: ${person?.name}`, '/?page=settings&target=coach_requests');
+    
     res.json({ success: true });
 });
 
@@ -774,6 +812,7 @@ app.post('/api/tickets/add', async (req, res) => {
         db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, type, remainingToAdd, remainingToAdd, expiry);
     }
     await logFinance({ peopleId: people_id, type: 'DEPOSIT', amountTicket: amount, amountCash: price_paid || 0, ticketType: type, note: note || '手動儲值' });
+    await createNotification(people_id, `儲值通知: ${amount}張 (${type})`, '/?page=settings&target=rider_history');
     res.json({ success: true });
 });
 
@@ -782,13 +821,14 @@ app.get('/api/tickets/requests', (req, res) => {
     res.json(results);
 });
 
-app.delete('/api/tickets/requests', (req, res) => {
+app.delete('/api/tickets/requests', async (req, res) => {
     const id = req.query.id;
     const reason = req.query.reason || '';
     const reqData = db.prepare("SELECT * FROM TicketRequests WHERE id = ?").get(id);
     db.prepare("DELETE FROM TicketRequests WHERE id = ?").run(id);
     if (reqData) {
         db.prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, 'REJECTED', 0, ?, ?, ?)`).run(TEAM_ID, reqData.people_id, reqData.amount, reqData.type, `申請被拒: ${reason || '無原因'}`);
+        await createNotification(reqData.people_id, `購票申請被拒: ${reason || '無原因'}`, '/?page=settings&target=rider_history');
     }
     res.json({ success: true });
 });

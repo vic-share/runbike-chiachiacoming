@@ -5,6 +5,7 @@ import { uploadImage } from '../services/supabase';
 import { DataRecord, LookupItem } from '../types';
 import { User, Award, Activity, Camera, UploadCloud, Loader2, ChevronRight, Trophy, MapPin } from 'lucide-react';
 import { format } from 'date-fns';
+import { hasRole, ROLES } from '../utils/auth';
 
 const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refreshData, activePersonId, onSelectPerson, onNavigateToTraining }) => {
   const [uploading, setUploading] = useState(false);
@@ -90,7 +91,7 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
       <section className="space-y-4">
           <div className="text-[10px] font-black text-zinc-600 tracking-[0.3em] uppercase">Switch Rider</div>
           <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4">
-                            {people.filter((p:any) => !p.is_hidden && !hasRole(p, ROLES.ADMIN)).map((p: any) => (
+                            {people.filter((p:any) => !p.is_hidden && !hasRole(p, ROLES.DEV)).map((p: any) => (
                   <button 
                     key={p.id} 
                     onClick={() => onSelectPerson(p.id)}
