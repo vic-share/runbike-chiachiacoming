@@ -828,7 +828,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                   return (
                       <>
                           <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5">
-                              <Header title="課程票務系統" onBack={() => setAdminView('menu')} />
+                              <Header title="課程票務" onBack={() => setAdminView('menu')} />
                           </div>
                           <div className="px-4 py-4 pb-28 space-y-4">
                               <div className={`p-4 rounded-2xl border transition-all flex items-center justify-between ${courseSystemEnabled ? 'bg-zinc-900/40 border-white/5' : 'bg-rose-500/10 border-rose-500/20'}`}>
@@ -917,7 +917,22 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end justify-between py-1">
-                                                    <button onClick={(e) => { e.stopPropagation(); if(courseSystemEnabled) { setFormData({ people_id: w.people_id, type: 'REGULAR', amount: 4, expiry_date: format(endOfMonth(addMonths(new Date(), 1)), 'yyyy-MM-dd') }); setModalType('ticket'); setShowModal(true); } }} className={`w-10 h-10 rounded-xl bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center transition-colors active:scale-95 border border-white/5 ${!courseSystemEnabled ? 'cursor-not-allowed opacity-50' : ''}`}> <Plus size={18}/> </button>
+                                                    <button onClick={(e) => { 
+                                                        e.stopPropagation(); 
+                                                        if(courseSystemEnabled) { 
+                                                            if (hasPermission(user, PERMISSIONS.TICKET_MANAGE) || hasRole(user, ROLES.DEV)) {
+                                                                // Admin: Direct adjustment
+                                                                setFormData({ people_id: w.people_id, type: 'REGULAR', amount: 1, expiry_date: format(endOfMonth(addMonths(new Date(), 1)), 'yyyy-MM-dd') });
+                                                                setModalType('manual_ticket');
+                                                                setShowModal(true);
+                                                            } else {
+                                                                // User: Purchase request
+                                                                setFormData({ people_id: w.people_id, type: 'REGULAR', amount: 4, expiry_date: format(endOfMonth(addMonths(new Date(), 1)), 'yyyy-MM-dd') }); 
+                                                                setModalType('ticket'); 
+                                                                setShowModal(true); 
+                                                            }
+                                                        } 
+                                                    }} className={`w-10 h-10 rounded-xl bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center transition-colors active:scale-95 border border-white/5 ${!courseSystemEnabled ? 'cursor-not-allowed opacity-50' : ''}`}> <Plus size={18}/> </button>
                                                     <div className="text-zinc-600"> {isExpanded ? <ChevronUp size={18}/> : <ChevronDown size={18}/>} </div>
                                                 </div>
                                             </div>
@@ -972,11 +987,31 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                    <div className="space-y-2">
                                        {ticketPrices.special_tiers?.map((tier, idx) => (
                                            <div key={idx} className="flex gap-2 items-center">
-                                               <div className="flex-1 bg-zinc-900/50 rounded-lg px-3 py-2 text-xs font-bold text-zinc-300 border border-white/5 flex justify-between"> <span>{tier.headcount} 人以上</span> <span className="text-white">${tier.price}</span> </div>
+                                               <input 
+                                                   type="number" 
+                                                   value={tier.headcount} 
+                                                   onChange={(e) => {
+                                                       const newTiers = [...ticketPrices.special_tiers];
+                                                       newTiers[idx].headcount = Number(e.target.value);
+                                                       setTicketPrices({...ticketPrices, special_tiers: newTiers});
+                                                   }}
+                                                   className="w-16 bg-zinc-900 border border-white/10 rounded-lg px-2 py-2 text-white text-xs font-bold outline-none text-center"
+                                               />
+                                               <span className="text-xs text-zinc-500 font-bold">人以上</span>
+                                               <input 
+                                                   type="number" 
+                                                   value={tier.price} 
+                                                   onChange={(e) => {
+                                                       const newTiers = [...ticketPrices.special_tiers];
+                                                       newTiers[idx].price = Number(e.target.value);
+                                                       setTicketPrices({...ticketPrices, special_tiers: newTiers});
+                                                   }}
+                                                   className="flex-1 bg-zinc-900 border border-white/10 rounded-lg px-2 py-2 text-white text-xs font-bold outline-none"
+                                               />
                                                <button onClick={() => handleDeleteTier(idx)} className="w-8 h-8 rounded-lg bg-zinc-800 text-zinc-500 hover:text-rose-500 flex items-center justify-center"><Trash2 size={14}/></button>
                                            </div>
                                        ))}
-                                       <div className="flex gap-2 items-center mt-2">
+                                       <div className="flex gap-2 items-center mt-2 pt-2 border-t border-white/5">
                                            <input type="number" placeholder="人數" value={newTier.headcount} onChange={e => setNewTier({...newTier, headcount: Number(e.target.value)})} className="w-20 bg-zinc-900 border border-white/10 rounded-lg px-2 py-2 text-white text-xs font-bold outline-none"/>
                                            <input type="number" placeholder="價格" value={newTier.price} onChange={e => setNewTier({...newTier, price: Number(e.target.value)})} className="flex-1 bg-zinc-900 border border-white/10 rounded-lg px-2 py-2 text-white text-xs font-bold outline-none"/>
                                            <button onClick={handleAddTier} className="w-8 h-8 rounded-lg bg-chiachia-green text-black flex items-center justify-center shadow-glow-green"><Plus size={16}/></button>
@@ -1020,9 +1055,9 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                          </div>
                                          {reportDateRange === 'CUSTOM' && (
                                              <div className="flex gap-2 bg-zinc-900 p-2 rounded-xl border border-white/5 shadow-lg animate-fade-in">
-                                                 <input type="date" value={customDateStart} onChange={e => setCustomDateStart(e.target.value)} className="bg-zinc-950 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white outline-none focus:border-chiachia-green/50"/>
+                                                 <input type="date" value={customDateStart} onChange={e => setCustomDateStart(e.target.value)} className="bg-zinc-950 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white outline-none focus:border-chiachia-green/50 min-w-0"/>
                                                  <span className="text-zinc-500 self-center">-</span>
-                                                 <input type="date" value={customDateEnd} onChange={e => setCustomDateEnd(e.target.value)} className="bg-zinc-950 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white outline-none focus:border-chiachia-green/50"/>
+                                                 <input type="date" value={customDateEnd} onChange={e => setCustomDateEnd(e.target.value)} className="bg-zinc-950 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white outline-none focus:border-chiachia-green/50 min-w-0"/>
                                                  <button onClick={() => loadFinancialReport(`CUSTOM:${customDateStart}:${customDateEnd}`)} className="bg-chiachia-green text-black px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-glow-green hover:scale-105 transition-transform"><Check size={14}/></button>
                                              </div>
                                          )}
@@ -1168,7 +1203,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                             <MenuCard title="推播通知" icon={<BellRing/>} onClick={() => { setModalType('settings_menu'); setShowModal(true); }} />
                             <MenuCard title="使用說明書" icon={<BookOpen/>} onClick={() => { setModalType('manual'); setShowModal(true); }} />
                             {(hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="人員管理" icon={<User/>} onClick={() => setAdminView('players')} />}
-                            {(hasPermission(user, PERMISSIONS.COURSE_EDIT) || hasPermission(user, PERMISSIONS.TICKET_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="課程票務系統" icon={<LayoutGrid/>} onClick={() => { setAdminView('course_ticket'); setCourseCategory(null); setTicketView('menu'); }} badge={ticketRequests.length} />}
+                            {(hasPermission(user, PERMISSIONS.COURSE_EDIT) || hasPermission(user, PERMISSIONS.TICKET_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="課程票務" icon={<LayoutGrid/>} onClick={() => { setAdminView('course_ticket'); setCourseCategory(null); setTicketView('menu'); }} badge={ticketRequests.length} />}
                             {(hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="訓練項目" icon={<Activity/>} onClick={() => setAdminView('training')} />}
                             {(hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="賽事系列" icon={<Flag/>} onClick={() => setAdminView('series')} />}
                             {(hasPermission(user, PERMISSIONS.PUSH_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="推播系統" icon={<Radio/>} onClick={() => { setAdminView('push_system'); setPushView('menu'); }} />}
@@ -1228,7 +1263,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                   )}
 
                   {/* EDIT PROFILE MODAL */}
-                  {showModal && modalType === 'parent_edit' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">編輯檔案</h3> </div> <div className="space-y-4"> <div className="w-full"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 block">檔案照片預覽</label> <div className="relative w-full aspect-video rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden group"> {user?.b_url ? <img src={user.b_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center flex-col gap-2 text-zinc-600"><ImageIcon size={32}/><span className="text-[10px] font-bold">無封面</span></div>} <label htmlFor="upload-cover-edit" className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"> <Camera size={24} className="text-white drop-shadow-lg mb-1"/> <span className="text-[10px] text-white font-bold bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">更換封面</span> </label> <input type="file" accept="image/*" className="hidden" id="upload-cover-edit" onChange={(e) => handleFileSelect(e, 'b')} /> <div className="absolute bottom-3 left-3 w-20 h-20 rounded-3xl border-2 border-white bg-zinc-950 overflow-hidden shadow-lg z-20 group/avatar"> {user?.s_url ? <img src={user.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><UserCircle2 size={32}/></div>} <label htmlFor="upload-avatar-edit" className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer"> <Camera size={20} className="text-white drop-shadow-md"/> </label> <input type="file" accept="image/*" className="hidden" id="upload-avatar-edit" onChange={(e) => handleFileSelect(e, 's')} /> </div> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">暱稱 (顯示名稱)</label> <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">全名 (真實姓名)</label> <input type="text" value={formData.full_name || ''} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">生日</label> <input type="date" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">個人宣言</label> <textarea rows={3} value={formData.myword || ''} onChange={e => setFormData({...formData, myword: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-sm"/> </div> <button onClick={handleUpdateSelf} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} {isSubmitting ? '儲存中...' : '儲存變更'} </button> </div> </div> </div> , document.body)}
+                  {showModal && modalType === 'parent_edit' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">編輯檔案</h3> </div> <div className="space-y-4"> <div className="w-full"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 block">檔案照片預覽</label> <div className="relative w-full aspect-video rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden group"> {user?.b_url ? <img src={user.b_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center flex-col gap-2 text-zinc-600"><ImageIcon size={32}/><span className="text-[10px] font-bold">無封面</span></div>} <label htmlFor="upload-cover-edit" className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"> <Camera size={24} className="text-white drop-shadow-lg mb-1"/> <span className="text-[10px] text-white font-bold bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">更換封面</span> </label> <input type="file" accept="image/*" className="hidden" id="upload-cover-edit" onChange={(e) => handleFileSelect(e, 'b')} /> <div className="absolute bottom-3 left-3 w-20 h-20 rounded-3xl border-2 border-white bg-zinc-950 overflow-hidden shadow-lg z-20 group/avatar"> {user?.s_url ? <img src={user.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><UserCircle2 size={32}/></div>} <label htmlFor="upload-avatar-edit" className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer"> <Camera size={20} className="text-white drop-shadow-md"/> </label> <input type="file" accept="image/*" className="hidden" id="upload-avatar-edit" onChange={(e) => handleFileSelect(e, 's')} /> </div> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">暱稱 (顯示名稱)</label> <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">全名 (真實姓名)</label> <input type="text" value={formData.full_name || ''} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">生日</label> <input type="date" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 min-w-0"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">個人宣言</label> <textarea rows={3} value={formData.myword || ''} onChange={e => setFormData({...formData, myword: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-sm"/> </div> <button onClick={handleUpdateSelf} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} {isSubmitting ? '儲存中...' : '儲存變更'} </button> </div> </div> </div> , document.body)}
 
                   {/* BANK ACCOUNT MODAL */}
       {showModal && modalType === 'bank_account' && createPortal(
@@ -1381,18 +1416,18 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                 ) : (
                                     <div className="space-y-1">
                                         <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">日期</label>
-                                        <input type="date" value={formData.date || ''} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/>
+                                        <input type="date" value={formData.date || ''} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold min-w-0"/>
                                     </div>
                                 )}
 
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="space-y-1">
                                         <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">開始時間</label>
-                                        <input type="time" value={formData.start_time || ''} onChange={e => setFormData({...formData, start_time: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/>
+                                        <input type="time" value={formData.start_time || ''} onChange={e => setFormData({...formData, start_time: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold min-w-0"/>
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">結束時間</label>
-                                        <input type="time" value={formData.end_time || ''} onChange={e => setFormData({...formData, end_time: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/>
+                                        <input type="time" value={formData.end_time || ''} onChange={e => setFormData({...formData, end_time: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold min-w-0"/>
                                     </div>
                                 </div>
 
@@ -1448,6 +1483,35 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                     document.body
                   )}
 
+                  {/* MANUAL TICKET MODAL (ADMIN) */}
+                  {showModal && modalType === 'manual_ticket' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">庫存調整</h3> </div> 
+                    <div className="space-y-4"> 
+                        <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">類型</label> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setFormData({...formData, type: 'REGULAR'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'REGULAR' ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>一般課</button> <button onClick={() => setFormData({...formData, type: 'RACING'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'RACING' ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>競速班</button> </div> </div> 
+                        <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">數量 (正數增加，負數減少)</label> <input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-2xl font-black outline-none focus:border-chiachia-green/50"/> </div> 
+                        <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">金額 (0 為免費/不記帳)</label> <input type="number" value={formData.price || 0} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-xl font-bold outline-none focus:border-chiachia-green/50"/> </div>
+                        <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">備註</label> <input type="text" value={formData.note || ''} onChange={e => setFormData({...formData, note: e.target.value})} placeholder="例如：補償、活動贈送" className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-sm font-bold outline-none focus:border-chiachia-green/50"/> </div>
+                        <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">到期日</label> <input type="date" value={formData.expiry_date} onChange={e => setFormData({...formData, expiry_date: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-sm font-bold outline-none focus:border-chiachia-green/50 min-w-0"/> </div>
+                    </div> 
+                    <button onClick={async () => {
+                        if (!formData.amount || Number(formData.amount) === 0) return alert('請輸入數量');
+                        setIsSubmitting(true);
+                        try {
+                            // Use existing manual add API but adapted
+                            await api.manualAddTickets({
+                                people_id: formData.people_id,
+                                type: formData.type,
+                                amount: Number(formData.amount),
+                                expiry_date: formData.expiry_date,
+                                price: Number(formData.price || 0),
+                                note: formData.note || '管理員手動調整'
+                            });
+                            await loadWallets();
+                            setShowModal(false);
+                        } catch(e) { alert('調整失敗'); }
+                        setIsSubmitting(false);
+                    }} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting ? <Loader2 size={18} className="animate-spin"/> : <Check size={18}/>} 確認調整 </button> 
+                  </div> </div> , document.body)}
+
                   {/* MANUAL MODAL */}
                   {showModal && modalType === 'manual' && <ManualModal user={user} onClose={() => setShowModal(false)} />}
                   
@@ -1490,8 +1554,8 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                 </div>
                 {historyFilter.period === 'CUSTOM' && (
                     <div className="grid grid-cols-2 gap-2 mt-2">
-                        <input type="date" value={historyCustomRange.start} onChange={e => setHistoryCustomRange({...historyCustomRange, start: e.target.value})} className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-3 py-2 text-white" />
-                        <input type="date" value={historyCustomRange.end} onChange={e => setHistoryCustomRange({...historyCustomRange, end: e.target.value})} className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-3 py-2 text-white" />
+                        <input type="date" value={historyCustomRange.start} onChange={e => setHistoryCustomRange({...historyCustomRange, start: e.target.value})} className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-3 py-2 text-white min-w-0" />
+                        <input type="date" value={historyCustomRange.end} onChange={e => setHistoryCustomRange({...historyCustomRange, end: e.target.value})} className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-3 py-2 text-white min-w-0" />
                     </div>
                 )}
             </div>

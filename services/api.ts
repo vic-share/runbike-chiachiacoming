@@ -398,6 +398,14 @@ export const api = {
       return await safeFetchJson('/settings/bank-account');
   },
 
+  // [NEW] Manual Add Tickets (Admin)
+  manualAddTickets: async (data: any) => {
+      return await safeFetchJson('/tickets/manual-add', {
+          method: 'POST',
+          body: JSON.stringify(data)
+      });
+  },
+
   saveBankAccount: async (data: any) => {
       return await safeFetchJson('/settings/bank-account', {
           method: 'POST',

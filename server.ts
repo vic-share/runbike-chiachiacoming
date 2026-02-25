@@ -355,7 +355,7 @@ app.get('/api/notifications/unread-count', (req, res) => {
 
 app.get('/api/notifications', (req, res) => {
     const userId = req.query.user_id;
-    const results = db.prepare("SELECT * FROM SystemNotifications WHERE user_id = ? AND team_id = ? ORDER BY created_at DESC LIMIT 30").all(userId, TEAM_ID);
+    const results = db.prepare(`SELECT id, team_id, user_id, title, action_link, is_read, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at FROM SystemNotifications WHERE user_id = ? AND team_id = ? ORDER BY created_at DESC LIMIT 30`).all(userId, TEAM_ID);
     res.json(results);
 });
 
@@ -486,10 +486,11 @@ app.get('/api/finance/report', (req, res) => {
     const daily = db.prepare(`SELECT date(created_at) as date, SUM(amount_cash) as amount, SUM(amount_ticket) as tickets FROM FinancialRecords ${whereClause} AND transaction_type = 'DEPOSIT' GROUP BY date(created_at) ORDER BY date ASC`).all(...params);
 
     // Monthly Stats for the last year (Fixed range: last 12 months)
-    const now = new Date();
+    // Use Taiwan time (+8) for consistent reporting
+    const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
     const months = [];
-    let y = now.getFullYear();
-    let m = now.getMonth() + 1; // 1-12
+    let y = now.getUTCFullYear();
+    let m = now.getUTCMonth() + 1; // 1-12
     
     for (let i = 0; i < 12; i++) {
         months.unshift(`${y}-${String(m).padStart(2, '0')}`);
@@ -503,14 +504,14 @@ app.get('/api/finance/report', (req, res) => {
     const oneYearAgo = months[0] + '-01';
     
     const monthlyData = db.prepare(`
-        SELECT strftime('%Y-%m', created_at) as month, 
+        SELECT strftime('%Y-%m', datetime(created_at, '+8 hours')) as month, 
                SUM(amount_cash) as revenue, 
                SUM(amount_ticket) as sold 
         FROM FinancialRecords 
         WHERE team_id = ${TEAM_ID} 
           AND transaction_type = 'DEPOSIT' 
-          AND date(created_at) >= ?
-        GROUP BY strftime('%Y-%m', created_at)
+          AND date(datetime(created_at, '+8 hours')) >= ?
+        GROUP BY strftime('%Y-%m', datetime(created_at, '+8 hours'))
     `).all(oneYearAgo);
 
     const monthlyMap = new Map(monthlyData.map((m: any) => [m.month, m]));
@@ -813,6 +814,24 @@ app.post('/api/tickets/add', async (req, res) => {
     }
     await logFinance({ peopleId: people_id, type: 'DEPOSIT', amountTicket: amount, amountCash: price_paid || 0, ticketType: type, note: note || '手動儲值' });
     await createNotification(people_id, `儲值通知: ${amount}張 (${type})`, '/?page=settings&target=rider_history');
+    res.json({ success: true });
+});
+
+app.post('/api/tickets/manual-add', async (req, res) => {
+    const { people_id, type, amount, expiry_date, price, note } = req.body;
+    const expiry = expiry_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0];
+    
+    // Add to TicketBatches
+    db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, type, amount, amount, expiry);
+    
+    // Log Finance (DEPOSIT if amount > 0, SPEND if amount < 0)
+    const transactionType = amount >= 0 ? 'DEPOSIT' : 'SPEND';
+    const logAmount = Math.abs(amount);
+    
+    db.prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, transactionType, price || 0, logAmount, type, note || '管理員手動調整');
+
+    await createNotification(people_id, `庫存調整: ${amount > 0 ? '+' : ''}${amount}張 (${type})`, '/?page=settings&target=rider_history');
+    
     res.json({ success: true });
 });
 
