@@ -407,6 +407,13 @@ export const api = {
       });
   },
 
+  createTrialRider: async (name: string) => {
+      return await safeFetchJson('/people/trial', {
+          method: 'POST',
+          body: JSON.stringify({ name })
+      });
+  },
+
   saveBankAccount: async (data: any) => {
       return await safeFetchJson('/settings/bank-account', {
           method: 'POST',

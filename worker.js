@@ -288,6 +288,7 @@ export default {
       // Lazy Init
       await getDB().prepare(`CREATE TABLE IF NOT EXISTS FinancialRecords (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER DEFAULT 1, people_id INTEGER, transaction_type TEXT, amount_cash INTEGER DEFAULT 0, amount_ticket INTEGER DEFAULT 0, ticket_type TEXT, note TEXT, related_session_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run();
       await getDB().prepare(`CREATE TABLE IF NOT EXISTS SystemNotifications (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER DEFAULT 1, user_id INTEGER, title TEXT, action_link TEXT, is_read BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run();
+      try { await getDB().prepare("ALTER TABLE ClassSessions ADD COLUMN note TEXT").run(); } catch (e) {}
 
       if (path === "/api/env.js") {
         const script = `window.ENV = window.ENV || {}; window.ENV.VITE_SUPABASE_URL = "${env.VITE_SUPABASE_URL || ''}"; window.ENV.VITE_SUPABASE_ANON_KEY = "${env.VITE_SUPABASE_ANON_KEY || ''}"; window.ENV.VAPID_PUBLIC_KEY = "${env.VAPID_PUBLIC_KEY || 'BAcjQfCcruqwU6OicgOJh66UR6125vX_rcsk-G_ddnQYdwI2XJK0jKYNF1IckZdqDfu7DvOOaVUFHd-PigfJ2jw'}";`;
@@ -568,11 +569,11 @@ export default {
       }
 
       if (path === "/api/courses/sessions" && method === "POST") {
-          const { id, date, start_time, end_time, name, location, capacity, max_students, category, ticket_type, template_id, price } = await request.json();
+          const { id, date, start_time, end_time, name, location, capacity, max_students, category, ticket_type, template_id, price, note } = await request.json();
           const finalCategory = category || (template_id ? 'ROUTINE' : 'SPECIAL');
           
           if (!id) { 
-              const res = await getDB().prepare(`INSERT INTO ClassSessions (team_id, template_id, date, start_time, end_time, name, location, max_students, ticket_type, status, category, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)`).bind(TEAM_ID, template_id || null, date, start_time, end_time, name, location || '', max_students || capacity || 20, ticket_type || 'NONE', finalCategory, price || 0).run();
+              const res = await getDB().prepare(`INSERT INTO ClassSessions (team_id, template_id, date, start_time, end_time, name, location, max_students, ticket_type, status, category, price, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)`).bind(TEAM_ID, template_id || null, date, start_time, end_time, name, location || '', max_students || capacity || 20, ticket_type || 'NONE', finalCategory, price || 0, note || '').run();
               await enrollDefaultStudents(getDB(), res.meta.last_row_id, template_id);
               if (finalCategory === 'ROUTINE') {
                   const title = "🆕 新課程開放報名";
@@ -582,8 +583,15 @@ export default {
               }
               return Response.json({ success: true, id: res.meta.last_row_id }, { headers: corsHeaders });
           }
-          await getDB().prepare(`UPDATE ClassSessions SET date=?, start_time=?, end_time=?, name=?, location=?, max_students=?, ticket_type=?, price=?, category=? WHERE id=? AND team_id=?`).bind(date, start_time, end_time, name, location || '', max_students || capacity || 20, ticket_type || 'NONE', price || 0, finalCategory, id, TEAM_ID).run();
+          await getDB().prepare(`UPDATE ClassSessions SET date=?, start_time=?, end_time=?, name=?, location=?, max_students=?, ticket_type=?, price=?, category=?, note=? WHERE id=? AND team_id=?`).bind(date, start_time, end_time, name, location || '', max_students || capacity || 20, ticket_type || 'NONE', price || 0, finalCategory, note || '', id, TEAM_ID).run();
           return Response.json({ success: true, id }, { headers: corsHeaders });
+      }
+
+      if (path === "/api/people/trial" && method === "POST") {
+          const { name } = await request.json();
+          // Create a trial rider with roles=['TRIAL'] and is_hidden=1
+          const res = await getDB().prepare("INSERT INTO People (team_id, name, roles, is_retired) VALUES (?, ?, ?, 1)").bind(TEAM_ID, name, JSON.stringify(['TRIAL'])).run();
+          return Response.json({ success: true, id: res.meta.last_row_id }, { headers: corsHeaders });
       }
 
       if (path === "/api/courses/session-status" && method === "POST") {
@@ -742,8 +750,8 @@ export default {
            const { results: sessions } = await getDB().prepare(query).bind(...params).all();
            const enhanced = await Promise.all(sessions.map(async s => {
                const count = await getDB().prepare("SELECT COUNT(*) as c FROM Enrollments E JOIN People P ON E.people_id = P.id WHERE E.session_id = ? AND E.status != 'CANCELLED' AND P.team_id = ?").bind(s.id, TEAM_ID).first();
-               const { results: students } = await getDB().prepare(`SELECT E.people_id as id, P.name, P.avatar_url as s_url, E.status, E.note FROM Enrollments E JOIN People P ON E.people_id = P.id WHERE E.session_id = ? AND P.team_id = ?`).bind(s.id, TEAM_ID).all();
-               return { ...s, enrolled_count: count.c, students, capacity: s.max_students || 20, category: s.template_id ? (s.category || 'ROUTINE') : 'SPECIAL', ticket_type: s.ticket_type || 'REGULAR', price: s.price || 0 };
+               const { results: students } = await getDB().prepare(`SELECT E.people_id as id, P.name, P.avatar_url as s_url, P.roles, E.status, E.note FROM Enrollments E JOIN People P ON E.people_id = P.id WHERE E.session_id = ? AND P.team_id = ?`).bind(s.id, TEAM_ID).all();
+               return { ...s, enrolled_count: count.c, students: students.map(st => ({...st, roles: JSON.parse(st.roles || '[]')})), capacity: s.max_students || 20, category: s.template_id ? (s.category || 'ROUTINE') : 'SPECIAL', ticket_type: s.ticket_type || 'REGULAR', price: s.price || 0, note: s.note || '' };
            }));
            return Response.json(enhanced, { headers: corsHeaders });
       }

@@ -34,6 +34,7 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
     const [showAdminStatusConfirm, setShowAdminStatusConfirm] = useState<{show: boolean, session?: ClassSession, status?: 'CONFIRMED' | 'CANCELLED' | 'OPEN'}>({ show: false });
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<{show: boolean, id?: string|number}>({ show: false });
     const [showBulkJoinModal, setShowBulkJoinModal] = useState<{show: boolean, session?: ClassSession}>({ show: false });
+    const [showConvertModal, setShowConvertModal] = useState<{show: boolean, student?: any}>({ show: false });
     
     // Admin Remove Student Modal State
     const [adminRemoveTarget, setAdminRemoveTarget] = useState<{studentId: string|number, studentName: string} | null>(null);
@@ -45,6 +46,13 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
     const [exitReason, setExitReason] = useState('');
     const [submitting, setSubmitting] = useState(false);
     
+    // Note Editing State
+    const [isEditingNote, setIsEditingNote] = useState(false);
+    const [noteContent, setNoteContent] = useState('');
+
+    // Convert Trial Rider State
+    const [convertData, setConvertData] = useState({ name: '', birthday: '', role: 'RIDER' });
+
     // User State
     const [user, setUser] = useState(api.getUser());
     const [showLoginHint, setShowLoginHint] = useState(false);
@@ -68,6 +76,14 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
             setIsDateMenuOpen(false);
         }
     }, [isFilterExpanded]);
+
+    // Reset note content when detail modal opens
+    useEffect(() => {
+        if (showDetailModal.session) {
+            setNoteContent(showDetailModal.session.note || '');
+            setIsEditingNote(false);
+        }
+    }, [showDetailModal.session]);
 
     const loadData = async () => {
         setLoading(true);
@@ -98,6 +114,78 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
             console.error(e);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleSaveNote = async () => {
+        if (!showDetailModal.session) return;
+        setSubmitting(true);
+        try {
+            // We use createClassSession (POST) which handles updates if ID is present
+            await api.createClassSession({
+                ...showDetailModal.session,
+                note: noteContent
+            });
+            await loadData();
+            // Update local session in modal
+            setShowDetailModal(prev => prev.session ? ({ ...prev, session: { ...prev.session, note: noteContent } }) : prev);
+            setIsEditingNote(false);
+        } catch (e) {
+            setInfoModal({ show: true, title: "錯誤", message: "儲存備註失敗", type: 'error' });
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleAddTrialRider = async () => {
+        const name = window.prompt("請輸入體驗選手姓名:");
+        if (!name || !name.trim()) return;
+        
+        setSubmitting(true);
+        try {
+            const res = await api.createTrialRider(name.trim());
+            if (res.success && res.id) {
+                // Auto join the session
+                await api.joinCourse(showBulkJoinModal.session!.id, res.id);
+                await loadData();
+                // Refresh bulk modal session data if needed, or just close it? 
+                // Actually, bulk modal shows "selectable people". The trial rider is already joined, so won't appear in selectable list.
+                // But we should probably refresh the background data.
+                // Let's close bulk modal and reopen detail modal to show new student?
+                setShowBulkJoinModal({ show: false });
+                const updatedSession = (await api.fetchWeeklyCourses()).find(s => s.id === showBulkJoinModal.session?.id);
+                if (updatedSession) setShowDetailModal({ show: true, session: updatedSession });
+            }
+        } catch (e) {
+            setInfoModal({ show: true, title: "錯誤", message: "新增體驗選手失敗", type: 'error' });
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleConvertClick = (student: any) => {
+        setConvertData({ name: student.name, birthday: '', role: 'RIDER' });
+        setShowConvertModal({ show: true, student });
+    };
+
+    const confirmConvert = async () => {
+        if (!showConvertModal.student) return;
+        setSubmitting(true);
+        try {
+            // Use manageLookup to update the person
+            await api.manageLookup('people', convertData.name, showConvertModal.student.id, false, false, {
+                birthday: convertData.birthday,
+                roles: ['RIDER'] // Remove TRIAL, add RIDER
+            });
+            await loadData();
+            setShowConvertModal({ show: false });
+            // Refresh detail modal
+            const updatedSession = (await api.fetchWeeklyCourses()).find(s => s.id === showDetailModal.session?.id);
+            if (updatedSession) setShowDetailModal({ show: true, session: updatedSession });
+        } catch (e) {
+            setInfoModal({ show: true, title: "錯誤", message: "轉正失敗", type: 'error' });
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -701,11 +789,24 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
                             <h3 className="text-xl font-black text-white italic">批量報名</h3>
                         </div>
                         <div className="space-y-4 pt-2 flex-1 overflow-hidden flex flex-col">
-                            <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest flex justify-between">
-                                <span>選擇選手 ({bulkSelectedIds.length})</span>
+                            <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest flex justify-between items-center">
+                                <span>Select Rider ({bulkSelectedIds.length})</span>
                                 <span>{showBulkJoinModal.session?.name}</span>
                             </div>
                             <div className="grid grid-cols-3 gap-2 overflow-y-auto no-scrollbar p-1 flex-1">
+                                {/* Trial Rider Button */}
+                                <button 
+                                    onClick={handleAddTrialRider}
+                                    className="relative group flex flex-col items-center gap-2 p-2 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 transition-all"
+                                >
+                                    <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-amber-500/30 bg-zinc-950 flex-shrink-0 flex items-center justify-center group-hover:border-amber-500/50">
+                                        <UserPlus size={16} className="text-amber-500"/>
+                                    </div>
+                                    <span className="text-[10px] font-bold truncate w-full text-center text-amber-500">
+                                        Trial Rider
+                                    </span>
+                                </button>
+
                                 {selectablePeople.map((p: any) => {
                                     const isSelected = bulkSelectedIds.includes(String(p.id));
                                     const isAlreadyJoined = showBulkJoinModal.session?.students?.some((st:any) => String(st.id || st.people_id) === String(p.id) && st.status !== 'CANCELLED');
@@ -745,6 +846,47 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
                             </div>
                             <button onClick={handleBulkJoin} disabled={submitting || bulkSelectedIds.length === 0} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-auto shrink-0">
                                 {submitting ? <Loader2 size={18} className="animate-spin" /> : `確認報名 (${bulkSelectedIds.length}人)`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            , document.body)}
+
+            {/* Convert Trial Rider Modal */}
+            {showConvertModal.show && showConvertModal.student && createPortal(
+                <div className="fixed inset-0 z-[60000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in" onClick={() => setShowConvertModal({show: false})}>
+                    <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-chiachia-green/20 text-center animate-scale-in shadow-[0_0_30px_rgba(57,231,95,0.1)]" onClick={e => e.stopPropagation()}>
+                        <div className="w-16 h-16 rounded-full bg-chiachia-green/10 text-chiachia-green flex items-center justify-center mx-auto mb-4 border border-chiachia-green/20">
+                            <UserPlus size={32} />
+                        </div>
+                        <h3 className="text-xl font-black text-white italic mb-2">轉為正式選手</h3>
+                        <p className="text-zinc-400 text-xs font-bold mb-4">請確認選手資料</p>
+                        
+                        <div className="space-y-3 text-left">
+                            <div>
+                                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1">姓名</label>
+                                <input 
+                                    type="text" 
+                                    value={convertData.name} 
+                                    onChange={e => setConvertData({...convertData, name: e.target.value})}
+                                    className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-chiachia-green/50"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1">生日 (YYYY-MM-DD)</label>
+                                <input 
+                                    type="date" 
+                                    value={convertData.birthday} 
+                                    onChange={e => setConvertData({...convertData, birthday: e.target.value})}
+                                    className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-chiachia-green/50"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 mt-6">
+                            <button onClick={() => setShowConvertModal({show: false})} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl active:bg-zinc-700 transition-colors">取消</button>
+                            <button onClick={confirmConvert} disabled={submitting || !convertData.name} className="py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:grayscale">
+                                {submitting ? <Loader2 size={16} className="animate-spin" /> : '確認轉正'}
                             </button>
                         </div>
                     </div>
@@ -799,18 +941,106 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
                         <div className="flex-1 overflow-y-auto no-scrollbar space-y-4">
                             {/* Stats */}
                             <div className="grid grid-cols-2 gap-3">
-                                <div className="bg-zinc-900/50 p-3 rounded-xl border border-white/5">
-                                    <div className="text-[10px] text-zinc-500 font-bold uppercase">Enrollment</div>
-                                    <div className="text-xl font-black text-white">{showDetailModal.session.enrolled_count} <span className="text-zinc-600 text-xs">/ {showDetailModal.session.capacity}</span></div>
+                                <div className="bg-zinc-900/40 rounded-xl p-3 border border-white/5 flex flex-col items-center justify-center gap-1">
+                                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">已報名</span>
+                                    <span className="text-2xl font-black text-white">{showDetailModal.session.enrolled_count} / {showDetailModal.session.capacity}</span>
                                 </div>
-                                <div className="bg-zinc-900/50 p-3 rounded-xl border border-white/5">
-                                    <div className="text-[10px] text-zinc-500 font-bold uppercase">Status</div>
-                                    <div className={`text-xl font-black ${showDetailModal.session.status === 'CONFIRMED' ? 'text-chiachia-green' : showDetailModal.session.status === 'CANCELLED' ? 'text-rose-500' : 'text-amber-500'}`}>
-                                        {showDetailModal.session.status || 'OPEN'}
-                                    </div>
+                                <div className="bg-zinc-900/40 rounded-xl p-3 border border-white/5 flex flex-col items-center justify-center gap-1">
+                                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">費用</span>
+                                    <span className="text-xl font-black text-white">{getDynamicPriceInfo(showDetailModal.session).label}</span>
                                 </div>
                             </div>
 
+                            {/* Note Section */}
+                            {(showDetailModal.session.note || canEdit) && (
+                                <div className="bg-zinc-900/40 rounded-xl p-3 border border-white/5 relative group">
+                                    {!isEditingNote ? (
+                                        <>
+                                            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">
+                                                <Info size={12}/> 備註
+                                            </div>
+                                            {showDetailModal.session.note ? (
+                                                <p className="text-sm text-zinc-300 whitespace-pre-wrap">{showDetailModal.session.note}</p>
+                                            ) : (
+                                                <p className="text-xs text-zinc-600 italic">無備註</p>
+                                            )}
+                                            {canEdit && (
+                                                <button onClick={() => setIsEditingNote(true)} className="absolute top-2 right-2 p-1.5 bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors">
+                                                    <Edit2 size={12}/>
+                                                </button>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                                                    <Edit2 size={12}/> 編輯備註
+                                                </div>
+                                                <button onClick={() => setIsEditingNote(false)} className="text-zinc-500 hover:text-white"><X size={14}/></button>
+                                            </div>
+                                            <textarea 
+                                                value={noteContent} 
+                                                onChange={e => setNoteContent(e.target.value)} 
+                                                className="w-full bg-zinc-950 border border-white/10 rounded-lg p-2 text-sm text-white outline-none min-h-[80px]"
+                                                placeholder="輸入備註..."
+                                            />
+                                            <div className="flex justify-end">
+                                                <button onClick={handleSaveNote} disabled={submitting} className="px-3 py-1.5 bg-chiachia-green text-black text-xs font-bold rounded-lg">
+                                                    {submitting ? '儲存中...' : '儲存'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Rider List */}
+                            <div>
+                                <h4 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 flex items-center justify-between">
+                                    <span>Rider List</span>
+                                    {canEdit && (
+                                        <button onClick={() => { setShowDetailModal({ show: false }); setBulkSelectedIds([]); setShowBulkJoinModal({ show: true, session: showDetailModal.session }); }} className="text-chiachia-green hover:underline">
+                                            + Add Riders
+                                        </button>
+                                    )}
+                                </h4>
+                                <div className="space-y-2">
+                                    {showDetailModal.session.students?.filter(st => st.status !== 'CANCELLED').map((st: any) => {
+                                        const isTrial = st.roles && st.roles.includes('TRIAL');
+                                        return (
+                                            <div key={st.id || st.people_id} className="flex items-center justify-between bg-zinc-900/40 p-3 rounded-xl border border-white/5">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden border border-white/10">
+                                                        {st.s_url ? <img src={st.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xs text-zinc-500">{st.name[0]}</div>}
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-sm font-bold text-white flex items-center gap-2">
+                                                            {st.name}
+                                                            {isTrial && <span className="text-[9px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded uppercase font-black tracking-wider">TRIAL</span>}
+                                                        </div>
+                                                        {st.note && <div className="text-[10px] text-zinc-500">{st.note}</div>}
+                                                    </div>
+                                                </div>
+                                                {canEdit && (
+                                                    <div className="flex items-center gap-2">
+                                                        {isTrial && (
+                                                            <button onClick={() => handleConvertClick(st)} className="p-2 bg-chiachia-green/10 text-chiachia-green rounded-lg hover:bg-chiachia-green/20 transition-colors" title="轉為正式選手">
+                                                                <UserPlus size={14}/>
+                                                            </button>
+                                                        )}
+                                                        <button onClick={() => handleAdminExitClick(st.id || st.people_id, st.name)} className="p-2 bg-rose-500/10 text-rose-500 rounded-lg hover:bg-rose-500/20 transition-colors">
+                                                            <LogOut size={14}/>
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                    {(!showDetailModal.session.students || showDetailModal.session.students.filter(st => st.status !== 'CANCELLED').length === 0) && (
+                                        <div className="text-center py-4 text-zinc-600 text-xs italic">No riders joined yet.</div>
+                                    )}
+                                </div>
+                            </div>
                             {/* Dynamic Price Display in Detail (Only for SPECIAL/NONE) */}
                             {showDetailModal.session.ticket_type === 'NONE' && (!showDetailModal.session.price || showDetailModal.session.price === 0) && ticketPricing?.special_tiers && (
                                 <div className="bg-zinc-900/30 p-3 rounded-xl border border-chiachia-green/20">
@@ -833,40 +1063,6 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
                                 </div>
                             )}
 
-                            {/* Student List */}
-                            <div className="space-y-2">
-                                <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Student List</div>
-                                {showDetailModal.session.students && showDetailModal.session.students.length > 0 ? (
-                                    showDetailModal.session.students.map((st: any) => (
-                                        <div key={st.id || st.people_id} className="flex items-center justify-between p-3 bg-zinc-900/30 rounded-xl border border-white/5">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-zinc-800 border border-white/10 overflow-hidden">
-                                                    {st.s_url ? <img src={st.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">{st.name[0]}</div>}
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className={`text-sm font-bold ${st.status === 'CANCELLED' ? 'text-zinc-500' : 'text-white'}`}>{st.name}</span>
-                                                    {st.status === 'CANCELLED' && st.note && <span className="text-[10px] text-rose-500 truncate max-w-[150px]">{st.note}</span>}
-                                                </div>
-                                            </div>
-                                            {st.status === 'CANCELLED' ? (
-                                                <div className="px-2 py-0.5 rounded bg-rose-500/10 text-rose-500 text-[9px] font-black uppercase border border-rose-500/20">LEAVE</div>
-                                            ) : (
-                                                // Admin Kick Button
-                                                canEdit && (
-                                                    <button 
-                                                        onClick={() => handleAdminExitClick(st.id || st.people_id, st.name)}
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-800 text-zinc-500 hover:text-rose-500 active:scale-95 transition-all"
-                                                    >
-                                                        <LogOut size={14}/>
-                                                    </button>
-                                                )
-                                            )}
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="text-center py-4 text-zinc-600 text-xs">尚無人報名</div>
-                                )}
-                            </div>
                         </div>
 
                         {/* Admin Actions */}

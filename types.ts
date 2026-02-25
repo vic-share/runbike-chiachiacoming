@@ -70,8 +70,9 @@ export interface ClassSession {
   price?: number;
   category?: 'ROUTINE' | 'GROUP' | 'SPECIAL';
   ticket_type?: 'REGULAR' | 'RACING' | 'GROUP_PRACTICE' | 'NONE';
-  students?: { id: string | number; name: string; s_url?: string; status: string; note?: string }[];
+  students?: { id: string | number; name: string; s_url?: string; status: string; note?: string; roles?: string[] }[];
   status?: 'OPEN' | 'CONFIRMED' | 'CANCELLED'; // Session Status
+  note?: string; // Session Note
 }
 
 export interface CourseTemplate {
