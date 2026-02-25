@@ -6,6 +6,7 @@ import { SimpleComposedChart } from '../components/SimpleComposedChart';
 import { UserCircle2, ChevronDown, Plus, X, Trophy, History, Trash2, Edit2, CheckCircle2, AlertTriangle, MessageCircle, Lock, KeyRound, Loader2, Users, UserPlus, Check, Camera, Play, ChevronLeft, CalendarDays, Delete, Save, ChevronUp, ChevronRight, Activity, Zap, RefreshCw, Quote, Medal, Flame } from 'lucide-react';
 import { format, differenceInYears, parseISO, isSameDay, subDays, subMonths, isAfter, isValid, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { hasRole, ROLES } from '../utils/auth';
+import { useTrainingSync } from '../hooks/useTrainingSync';
 
 const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data, people, activePersonId, onSelectPerson, pinnedPeopleIds, onTogglePinned, raceEvents, initialExpandedDate, onClearJumpDate }) => {
   const [isRecordingMode, setIsRecordingMode] = useState(false);
@@ -30,6 +31,8 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const [showBioModal, setShowBioModal] = useState(false); 
   const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, id?: string|number}>({ show: false });
   const [submitting, setSubmitting] = useState(false);
+  
+  const { saveRecord } = useTrainingSync();
   
   const currentUser = api.getUser();
   const canRecord = currentUser && (hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.AIDE) || hasRole(currentUser, ROLES.DEV));
@@ -276,7 +279,17 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       setSubmitting(true);
       try {
           const typeId = getSelectedTypeId();
-          await api.submitRecord({ date: format(new Date(), 'yyyy-MM-dd'), item: 'training', people_id: targetId, value: parseFloat(inputValue).toFixed(3), training_type_id: typeId });
+          const recordData = { 
+              date: format(new Date(), 'yyyy-MM-dd'), 
+              item: 'training', 
+              people_id: targetId, 
+              value: parseFloat(inputValue).toFixed(3), 
+              training_type_id: typeId 
+          };
+
+          // 離線優先：立刻寫入 IndexedDB 並觸發背景同步
+          await saveRecord(recordData);
+
           localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now()));
           setFeedbackMsg('SAVED'); setInputValue('');
           await new Promise(r => setTimeout(r, 800)); await refreshData();
