@@ -922,6 +922,39 @@ app.put('/api/tickets/batch', (req, res) => {
     res.json({ success: true });
 });
 
+// --- Push Notification Routes ---
+
+app.post('/api/subscribe', (req, res) => {
+    try {
+        const { endpoint, keys, people_id } = req.body;
+        if (!endpoint || !keys || !people_id) return res.status(400).json({ success: false, msg: "Missing fields" });
+
+        const existing = db.prepare("SELECT id FROM PushSubscriptions WHERE endpoint = ?").get(endpoint);
+        if (existing) {
+            db.prepare("UPDATE PushSubscriptions SET people_id = ?, p256dh = ?, auth = ? WHERE id = ?").run(people_id, keys.p256dh, keys.auth, existing.id);
+        } else {
+            db.prepare("INSERT INTO PushSubscriptions (endpoint, p256dh, auth, people_id) VALUES (?, ?, ?, ?)").run(endpoint, keys.p256dh, keys.auth, people_id);
+        }
+        res.json({ success: true });
+    } catch (e) {
+        console.error("Subscribe Error:", e);
+        res.status(500).json({ success: false, msg: "Server Error" });
+    }
+});
+
+app.post('/api/unsubscribe', (req, res) => {
+    try {
+        const { endpoint } = req.body;
+        if (endpoint) {
+            db.prepare("DELETE FROM PushSubscriptions WHERE endpoint = ?").run(endpoint);
+        }
+        res.json({ success: true });
+    } catch (e) {
+        console.error("Unsubscribe Error:", e);
+        res.status(500).json({ success: false, msg: "Server Error" });
+    }
+});
+
 // --- Vite Middleware ---
 async function startServer() {
     if (process.env.NODE_ENV !== 'production') {
