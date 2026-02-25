@@ -190,21 +190,80 @@ const KV = {
     }
 };
 
+// --- VAPID Setup ---
+const publicVapidKey = process.env.VAPID_PUBLIC_KEY || 'BAcjQfCcruqwU6OicgOJh66UR6125vX_rcsk-G_ddnQYdwI2XJK0jKYNF1IckZdqDfu7DvOOaVUFHd-PigfJ2jw';
+const privateVapidKey = process.env.VAPID_PRIVATE_KEY;
+
+if (privateVapidKey) {
+    try {
+        webpush.setVapidDetails(
+            process.env.VAPID_SUBJECT || 'mailto:vic070680@gmail.com',
+            publicVapidKey,
+            privateVapidKey
+        );
+        console.log('VAPID initialized');
+    } catch (e) {
+        console.error('VAPID init failed:', e);
+    }
+}
+
 // --- Middleware ---
 app.use(cors());
 app.use(bodyParser.json());
 
 // --- Helper Functions ---
 async function sendPushToRole(role, title, body, url = "/") {
-    // Mock implementation or real if keys exist
     // For now, just log it as we might not have VAPID keys
     console.log(`[PUSH] To ${role}: ${title} - ${body}`);
+    
+    try {
+        const query = role === 'all' ? `SELECT id FROM People WHERE team_id = ?` : `SELECT id FROM People WHERE team_id = ? AND roles LIKE ?`;
+        const params = role === 'all' ? [TEAM_ID] : [TEAM_ID, `%"${role}"%`];
+        const users = db.prepare(query).all(...params);
+        
+        for (const user of users) {
+            await sendPushToUser(user.id, title, body, url);
+        }
+    } catch (e) {
+        console.error("Send Push Role Error:", e);
+    }
     return 0;
 }
 
 async function sendPushToUser(peopleId, title, body, url = "/") {
     console.log(`[PUSH] To User ${peopleId}: ${title} - ${body}`);
-    return 0;
+    
+    if (!privateVapidKey) {
+        // console.warn("No VAPID_PRIVATE_KEY, skipping push");
+        return 0;
+    }
+
+    const subs = db.prepare("SELECT * FROM PushSubscriptions WHERE people_id = ?").all(peopleId);
+    if (!subs || subs.length === 0) return 0;
+
+    const payload = JSON.stringify({ title, body, url });
+    let count = 0;
+
+    for (const sub of subs) {
+        const pushSubscription = {
+            endpoint: sub.endpoint,
+            keys: {
+                p256dh: sub.p256dh,
+                auth: sub.auth
+            }
+        };
+
+        try {
+            await webpush.sendNotification(pushSubscription, payload);
+            count++;
+        } catch (error: any) {
+            console.error("Push Error:", error);
+            if (error.statusCode === 410 || error.statusCode === 404) {
+                db.prepare("DELETE FROM PushSubscriptions WHERE id = ?").run(sub.id);
+            }
+        }
+    }
+    return count;
 }
 
 async function sendPushToParticipants(entityId, type, title, body, url = "/") {
@@ -214,6 +273,8 @@ async function sendPushToParticipants(entityId, type, title, body, url = "/") {
 async function createNotification(userId, title, actionLink) {
     try {
         db.prepare(`INSERT INTO SystemNotifications (team_id, user_id, title, action_link) VALUES (?, ?, ?, ?)`).run(TEAM_ID, userId, title, actionLink);
+        // Also try to send push
+        await sendPushToUser(userId, '通知', title, actionLink);
     } catch (e) { console.error("Create Notification Error:", e); }
 }
 
@@ -228,6 +289,9 @@ async function createNotificationForRole(role, title, actionLink) {
             for (const n of notifications) stmt.run(TEAM_ID, n.id, title, actionLink);
         });
         transaction(results);
+        
+        // Send Push
+        await sendPushToRole(role, '公告', title, actionLink);
     } catch (e) { console.error("Create Role Notification Error:", e); }
 }
 

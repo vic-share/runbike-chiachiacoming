@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import { DataRecord, LegendRecord, LookupItem } from '../types';
-import { ChevronRight, Trophy, MapPin, Zap, CalendarDays, ChevronDown, Activity, UserCircle2, X, Maximize2, BarChart3, Flame, Download, Share2 } from 'lucide-react';
+import { ChevronRight, Trophy, MapPin, Zap, CalendarDays, ChevronDown, Activity, UserCircle2, X, Maximize2, Flame, Download, Share2 } from 'lucide-react';
 import { SimpleComposedChart } from '../components/SimpleComposedChart';
 import { ForecastItem } from '../components/ForecastItem';
 import { format, parseISO, isAfter, subDays, subMonths, isWithinInterval, startOfDay, endOfDay, isValid } from 'date-fns';

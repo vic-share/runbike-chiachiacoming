@@ -29,3 +29,18 @@ database_id = "d62306c8-2269-4252-824a-d434139cfabc"
 [[kv_namespaces]]
 binding = "RUNBIKE_KV"
 id = "4f261c7339264e81bbdee936c32d96dc"
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
