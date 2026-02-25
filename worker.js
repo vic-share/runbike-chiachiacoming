@@ -347,7 +347,7 @@ export default {
       }
       if (path === "/api/notifications") {
           const userId = url.searchParams.get('user_id');
-          const { results } = await getDB().prepare("SELECT * FROM SystemNotifications WHERE user_id = ? AND team_id = ? ORDER BY created_at DESC LIMIT 30").bind(userId, TEAM_ID).all();
+          const { results } = await getDB().prepare("SELECT id, team_id, user_id, title, action_link, is_read, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at FROM SystemNotifications WHERE user_id = ? AND team_id = ? ORDER BY created_at DESC LIMIT 30").bind(userId, TEAM_ID).all();
           return Response.json(results, { headers: corsHeaders });
       }
       if (path === "/api/notifications/read" && method === "POST") {
@@ -454,7 +454,7 @@ export default {
                   startDate = parts[1];
                   endDate = parts[2];
               }
-          } else if (range && range.match(/^\\d{4}-\\d{2}$/)) {
+          } else if (range && range.match(/^\d{4}-\d{2}$/)) {
               // Specific month
               whereClause += ` AND strftime('%Y-%m', created_at) = ?`;
               params.push(range);
@@ -482,11 +482,44 @@ export default {
           // Daily Stats for Chart
           const daily = await getDB().prepare(`SELECT date(created_at) as date, SUM(amount_cash) as amount, SUM(amount_ticket) as tickets FROM FinancialRecords ${whereClause} AND transaction_type = 'DEPOSIT' GROUP BY date(created_at) ORDER BY date ASC`).bind(...params).all();
 
+          // Monthly Stats for the last year (Fixed range: last 12 months)
+          // Use Taiwan time (+8) for consistent reporting
+          const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+          const months = [];
+          let y = now.getUTCFullYear();
+          let m = now.getUTCMonth() + 1; // 1-12
+          
+          for (let i = 0; i < 12; i++) {
+              months.unshift(`${y}-${String(m).padStart(2, '0')}`);
+              m--;
+              if (m === 0) {
+                  m = 12;
+                  y--;
+              }
+          }
+          
+          const oneYearAgo = months[0] + '-01';
+          
+          const { results: monthlyData } = await getDB().prepare(`
+              SELECT strftime('%Y-%m', datetime(created_at, '+8 hours')) as month, 
+                     SUM(amount_cash) as revenue, 
+                     SUM(amount_ticket) as sold 
+              FROM FinancialRecords 
+              WHERE team_id = ${TEAM_ID} 
+                AND transaction_type = 'DEPOSIT' 
+                AND date(datetime(created_at, '+8 hours')) >= ?
+              GROUP BY strftime('%Y-%m', datetime(created_at, '+8 hours'))
+          `).bind(oneYearAgo).all();
+
+          const monthlyMap = new Map(monthlyData.map((m) => [m.month, m]));
+          const monthly = months.map(m => monthlyMap.get(m) || { month: m, revenue: 0, sold: 0 });
+
           return Response.json({
               total_revenue: revenue?.total || 0,
               tickets_sold: sold?.total || 0,
               tickets_used: used?.total || 0,
-              daily_stats: daily.results
+              daily_stats: daily.results,
+              monthly_stats: monthly
           }, { headers: corsHeaders });
       }
 
@@ -622,6 +655,22 @@ export default {
           await sendPushToUser(env, people_id, title, body, '/?page=settings&target=rider_history');
           await createNotification(getDB(), people_id, title, '/?page=settings&target=rider_history');
 
+          return Response.json({ success: true }, { headers: corsHeaders });
+      }
+
+      if (path === "/api/tickets/manual-add" && method === "POST") {
+          const { people_id, type, amount, expiry_date, price, note } = await request.json();
+          const expiry = expiry_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0];
+          
+          await getDB().prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, type, amount, amount, expiry).run();
+          
+          const transactionType = amount >= 0 ? 'DEPOSIT' : 'SPEND';
+          const logAmount = Math.abs(amount);
+          
+          await getDB().prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, transactionType, price || 0, logAmount, type, note || '管理員手動調整').run();
+
+          await createNotification(getDB(), people_id, `庫存調整: ${amount > 0 ? '+' : ''}${amount}張 (${type})`, '/?page=settings&target=rider_history');
+          
           return Response.json({ success: true }, { headers: corsHeaders });
       }
       

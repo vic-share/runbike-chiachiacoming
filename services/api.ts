@@ -2,8 +2,10 @@
 import { DataRecord, LookupItem, TeamInfo, ClassSession, Enrollment, TicketWallet, CourseTemplate, LegendRecord, RaceEvent, PushTemplates, TicketPricing, FinancialRecord, FinancialReport } from '../types';
 
 const getWorkerUrl = () => {
-    // 統一使用新的 Worker URL
-    // 由於預覽環境出現 403 錯誤，暫時改回 /api 以便本地開發
+    // 在預覽環境中使用本地 /api 以確保 server.ts 的修改生效
+    if (window.location.hostname.includes('run.app') || window.location.hostname === 'localhost') {
+        return '/api';
+    }
     return 'https://runbike-chiachiacoming.sky070680.workers.dev/api';
 };
 
