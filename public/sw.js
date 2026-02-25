@@ -1,22 +1,24 @@
 // Service Worker for Chia Chia Coming (Enhanced Debug Version)
+const SW_VERSION = 'v1.0.1';
+
 self.addEventListener('push', function(event) {
   let data = { title: '', body: '收到一則新訊息' };
   
   // 1. 追蹤原始推播內容
-  console.log('SW: [Step 1] 接收到推播事件', event);
+  console.log(`SW [${SW_VERSION}]: [Step 1] 接收到推播事件`, event);
 
   try {
     if (event.data) {
       data = event.data.json();
-      console.log('SW: [Step 2] 解析 JSON 成功:', data);
+      console.log(`SW [${SW_VERSION}]: [Step 2] 解析 JSON 成功:`, data);
     }
   } catch (e) {
-    console.warn('SW: [Step 2] 解析失敗，切換為純文字模式:', event.data.text());
+    console.warn(`SW [${SW_VERSION}]: [Step 2] 解析失敗，切換為純文字模式:`, event.data.text());
     data.body = event.data.text();
   }
 
-  // 標題邏輯優化
-  const titleToUse = (data.title && data.title.trim() !== '') ? data.title : '\u200B';
+  // 標題邏輯優化: iOS 不支援空標題或不可見字符，必須給預設值
+  const titleToUse = (data.title && data.title.trim() !== '') ? data.title : '系統通知';
   const options = {
     body: data.body,
     icon: 'https://pyltlobngdnoqjnrxefn.supabase.co/storage/v1/object/public/runbike/title/cccm.png',
@@ -26,42 +28,19 @@ self.addEventListener('push', function(event) {
     renotify: true
   };
 
-  const processPush = async () => {
-    console.log('SW: [Step 3] 開始執行 processPush 異步邏輯');
-
-    // 同步執行設定紅點
-    const badgePromise = (async () => {
-      const nav = self.navigator || navigator;
-      if (nav && 'setAppBadge' in nav) {
-        try {
-          await nav.setAppBadge(1);
-          console.log('SW: [Badge] 紅點設定成功 (1)');
-        } catch (err) {
-          console.error('SW: [Badge] 紅點設定失敗:', err);
-        }
-      }
-    })();
-
-    // 顯示通知並追蹤結果
-    const notificationPromise = (async () => {
-      try {
-        console.log('SW: [Notification] 準備執行 showNotification...', { titleToUse, options });
-        
-        // 檢查權限 (最後一刻確認)
-        console.log('SW: [Notification] 目前權限狀態:', Notification.permission);
-        
-        await self.registration.showNotification(titleToUse, options);
-        console.log('SW: [Notification] showNotification 執行完畢 (應已跳出視窗)');
-      } catch (err) {
-        console.error('SW: [Notification] showNotification 噴錯了:', err);
-      }
-    })();
-
-    await Promise.all([badgePromise, notificationPromise]);
-    console.log('SW: [Step 4] 所有推播處理程序已完成');
-  };
-
-  event.waitUntil(processPush());
+  // iOS 16.4+ 要求 showNotification 必須是 waitUntil 的直接 Promise
+  event.waitUntil(
+    self.registration.showNotification(titleToUse, options)
+      .then(() => {
+         console.log(`SW [${SW_VERSION}]: [Notification] showNotification 執行完畢`);
+         // 嘗試設定紅點 (非標準 API，部分瀏覽器支援)
+         const nav = self.navigator || navigator;
+         if (nav && 'setAppBadge' in nav) {
+             return nav.setAppBadge(1).catch(e => console.error("Badge Error:", e));
+         }
+      })
+      .catch(err => console.error(`SW [${SW_VERSION}]: [Notification] Error:`, err))
+  );
 });
 
 self.addEventListener('notificationclick', function(event) {

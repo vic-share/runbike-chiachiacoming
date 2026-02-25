@@ -97,7 +97,21 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, titl
       
       checkCount();
       const interval = setInterval(checkCount, 30000); // Poll every 30s
-      return () => clearInterval(interval);
+      
+      // 🟢 Clear Badge when App comes to foreground
+      const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible' && 'clearAppBadge' in navigator) {
+              navigator.clearAppBadge().catch(e => console.error("Badge Clear Error:", e));
+              // Also refresh count immediately
+              checkCount();
+          }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      
+      return () => {
+          clearInterval(interval);
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
   }, [user]);
 
   const handleOpenNotifications = async () => {
