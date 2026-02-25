@@ -35,6 +35,7 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<{show: boolean, id?: string|number}>({ show: false });
     const [showBulkJoinModal, setShowBulkJoinModal] = useState<{show: boolean, session?: ClassSession}>({ show: false });
     const [showConvertModal, setShowConvertModal] = useState<{show: boolean, student?: any}>({ show: false });
+    const [showAddTrialRiderModal, setShowAddTrialRiderModal] = useState<{show: boolean, name: string}>({ show: false, name: '' });
     
     // Admin Remove Student Modal State
     const [adminRemoveTarget, setAdminRemoveTarget] = useState<{studentId: string|number, studentName: string} | null>(null);
@@ -138,20 +139,18 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
     };
 
     const handleAddTrialRider = async () => {
-        const name = window.prompt("請輸入體驗選手姓名:");
-        if (!name || !name.trim()) return;
+        setShowAddTrialRiderModal({ show: true, name: '' });
+    };
+
+    const confirmAddTrialRider = async () => {
+        if (!showAddTrialRiderModal.name.trim()) return;
         
         setSubmitting(true);
         try {
-            const res = await api.createTrialRider(name.trim());
+            const res = await api.createTrialRider(showAddTrialRiderModal.name.trim());
             if (res.success && res.id) {
-                // Auto join the session
                 await api.joinCourse(showBulkJoinModal.session!.id, res.id);
                 await loadData();
-                // Refresh bulk modal session data if needed, or just close it? 
-                // Actually, bulk modal shows "selectable people". The trial rider is already joined, so won't appear in selectable list.
-                // But we should probably refresh the background data.
-                // Let's close bulk modal and reopen detail modal to show new student?
                 setShowBulkJoinModal({ show: false });
                 const updatedSession = (await api.fetchWeeklyCourses()).find(s => s.id === showBulkJoinModal.session?.id);
                 if (updatedSession) setShowDetailModal({ show: true, session: updatedSession });
@@ -160,6 +159,7 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
             setInfoModal({ show: true, title: "錯誤", message: "新增體驗選手失敗", type: 'error' });
         } finally {
             setSubmitting(false);
+            setShowAddTrialRiderModal({ show: false, name: '' });
         }
     };
 
@@ -846,6 +846,39 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
                             </div>
                             <button onClick={handleBulkJoin} disabled={submitting || bulkSelectedIds.length === 0} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-auto shrink-0">
                                 {submitting ? <Loader2 size={18} className="animate-spin" /> : `確認報名 (${bulkSelectedIds.length}人)`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            , document.body)}
+
+            {/* Add Trial Rider Modal */}
+            {showAddTrialRiderModal.show && createPortal(
+                <div className="fixed inset-0 z-[60000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in" onClick={() => setShowAddTrialRiderModal({show: false, name: ''})}>
+                    <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-amber-500/20 text-center animate-scale-in shadow-[0_0_30px_rgba(242,125,38,0.1)]" onClick={e => e.stopPropagation()}>
+                        <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
+                            <UserPlus size={32} />
+                        </div>
+                        <h3 className="text-xl font-black text-white italic mb-2">新增體驗選手</h3>
+                        <p className="text-zinc-400 text-xs font-bold mb-4">請輸入體驗選手姓名</p>
+                        
+                        <div className="space-y-3 text-left">
+                            <div>
+                                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1">姓名</label>
+                                <input 
+                                    type="text" 
+                                    value={showAddTrialRiderModal.name} 
+                                    onChange={e => setShowAddTrialRiderModal({...showAddTrialRiderModal, name: e.target.value})}
+                                    className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-amber-500/50"
+                                    placeholder="姓名..."
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 mt-6">
+                            <button onClick={() => setShowAddTrialRiderModal({show: false, name: ''})} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl active:bg-zinc-700 transition-colors">取消</button>
+                            <button onClick={confirmAddTrialRider} disabled={submitting || !showAddTrialRiderModal.name.trim()} className="py-3 bg-amber-500 text-black font-black rounded-xl shadow-glow-amber active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:grayscale">
+                                {submitting ? <Loader2 size={16} className="animate-spin" /> : '確認新增'}
                             </button>
                         </div>
                     </div>

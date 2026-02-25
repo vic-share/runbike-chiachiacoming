@@ -590,7 +590,8 @@ export default {
       if (path === "/api/people/trial" && method === "POST") {
           const { name } = await request.json();
           // Create a trial rider with roles=['TRIAL'] and is_hidden=1
-          const res = await getDB().prepare("INSERT INTO People (team_id, name, roles, is_retired) VALUES (?, ?, ?, 1)").bind(TEAM_ID, name, JSON.stringify(['TRIAL'])).run();
+          const passwordHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(name)).then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
+          const res = await getDB().prepare("INSERT INTO People (team_id, name, roles, is_retired, password) VALUES (?, ?, ?, 1, ?)").bind(TEAM_ID, name, JSON.stringify(['TRIAL']), passwordHash).run();
           return Response.json({ success: true, id: res.meta.last_row_id }, { headers: corsHeaders });
       }
 
