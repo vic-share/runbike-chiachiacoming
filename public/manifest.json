@@ -10,12 +10,12 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "https://pyltlobngdnoqjnrxefn.supabase.co/storage/v1/object/public/runbike/title/cccm.png",
+      "src": "/cccm.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://pyltlobngdnoqjnrxefn.supabase.co/storage/v1/object/public/runbike/title/cccm.png",
+      "src": "/cccm.png",
       "sizes": "512x512",
       "type": "image/png"
     }
