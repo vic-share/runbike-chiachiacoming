@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import localforage from 'localforage';
 import { api } from '../services/api';
 
@@ -13,51 +13,56 @@ const trainingStore = localforage.createInstance({
  * Custom Hook for Offline-First Training Data Synchronization
  */
 export const useTrainingSync = () => {
-    const [isSyncing, setIsSyncing] = useState(false);
+    const [isSyncingState, setIsSyncingState] = useState(false);
+    const syncLock = useRef(false); // 使用 Ref 進行即時同步鎖定
 
     /**
-     * Background sync logic:
-     * 1. Check network status
-     * 2. Fetch unsynced records from IndexedDB
-     * 3. Upload to D1 via API
-     * 4. Cleanup on success
+     * Background sync logic
      */
     const syncData = useCallback(async () => {
-        if (!navigator.onLine || isSyncing) return;
+        // 1. 嚴格檢查：網路狀態、是否正在同步中
+        if (!navigator.onLine || syncLock.current) return;
 
-        setIsSyncing(true);
+        syncLock.current = true;
+        setIsSyncingState(true);
+
         try {
             const keys = await trainingStore.keys();
             for (const key of keys) {
                 const record: any = await trainingStore.getItem(key);
                 
-                if (record && !record.is_synced) {
-                    // 建立 AbortController 用於實作 1 秒超時
+                // 2. 只有「未同步」且「非上傳中」的資料才處理
+                if (record && !record.is_synced && !record.is_uploading) {
+                    
+                    // 3. 立即標記為上傳中，防止其他程序重複讀取
+                    await trainingStore.setItem(key, { ...record, is_uploading: true });
+
                     const controller = new AbortController();
                     const timeoutId = setTimeout(() => controller.abort(), 1000);
 
                     try {
-                        // 傳入 signal，若超過 1 秒會觸發 abort 拋出異常
                         const res = await api.submitRecord({
                             ...record.data,
-                            // 這裡可以傳入 signal 給 fetch，但因為 api.ts 封裝了 fetch，
-                            // 我們可以直接在呼叫時處理，或者修改 api.ts。
-                            // 為了不改動 api.ts 的結構，我們在這裡處理超時判斷。
+                            client_id: record.id // 傳送 UUID 供後端檢查
                         }, { signal: controller.signal } as any);
                         
                         clearTimeout(timeoutId);
 
                         if (res.success) {
+                            // 同步成功，移除本地資料
                             await trainingStore.removeItem(key);
+                        } else {
+                            // 伺服器回傳失敗，取消上傳中標記，等待下次重試
+                            await trainingStore.setItem(key, { ...record, is_uploading: false });
                         }
                     } catch (error: any) {
                         clearTimeout(timeoutId);
+                        // 發生錯誤或超時，還原狀態，等待下次重試
+                        await trainingStore.setItem(key, { ...record, is_uploading: false });
+                        
                         if (error.name === 'AbortError') {
-                            console.warn(`[Sync Timeout] Record ${key} sync timed out (>1s), keeping local.`);
-                        } else {
-                            console.error(`[Sync Error] Failed to upload record ${key}:`, error);
+                            console.warn(`[Sync Timeout] Record ${key} timed out.`);
                         }
-                        // 發生超時或錯誤，跳過此筆，保留在本地
                         continue;
                     }
                 }
@@ -65,12 +70,13 @@ export const useTrainingSync = () => {
         } catch (error) {
             console.error('[Sync Error] Global sync process failed:', error);
         } finally {
-            setIsSyncing(false);
+            syncLock.current = false;
+            setIsSyncingState(false);
         }
-    }, [isSyncing]);
+    }, []);
 
     /**
-     * Save record locally first (Immediate Persistence)
+     * Save record locally first
      */
     const saveRecord = async (data: any) => {
         const id = crypto.randomUUID();
@@ -78,27 +84,21 @@ export const useTrainingSync = () => {
             id,
             data,
             created_at: new Date().toISOString(),
-            is_synced: false
+            is_synced: false,
+            is_uploading: false
         };
 
-        // 1. IMMEDIATE write to IndexedDB (Prevents data loss on crash)
         await trainingStore.setItem(id, record);
-
-        // 2. Attempt background sync immediately if online
+        
+        // 觸發同步，但 syncData 內部有鎖，所以是安全的
         syncData();
 
         return id;
     };
 
-    // Auto-sync on mount and network recovery
     useEffect(() => {
         syncData();
-
-        const handleOnline = () => {
-            console.log('[Sync] Network restored, triggering background sync...');
-            syncData();
-        };
-
+        const handleOnline = () => syncData();
         window.addEventListener('online', handleOnline);
         return () => window.removeEventListener('online', handleOnline);
     }, [syncData]);
@@ -106,6 +106,6 @@ export const useTrainingSync = () => {
     return { 
         saveRecord, 
         syncData, 
-        isSyncing 
+        isSyncing: isSyncingState 
     };
 };
