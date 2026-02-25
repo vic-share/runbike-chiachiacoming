@@ -53,7 +53,7 @@ const SimpleAreaChart = ({ data, color = "#39e75f", showTickets = false }: any) 
 };
 import { ManualModal } from '../components/ManualModal';
 
-const FALLBACK_VAPID = "BM5bTSfktrz3d1oj3PgW2wW8EyBIWUY6Ig5clnjBnEiwE5jnOrobDdGbeqm98_RLu6jZq-0c_hjd6HR8Lr0EusU";
+const FALLBACK_VAPID = "BAYcVhqewAIIymHfS_PpSQq9F2UdGEHiwjdCJRJYoqtnzfONQQj5-_FLDK-gP0yQ_k-JwcHngO1j3rBrSYpAjuA";
 
 const urlBase64ToUint8Array = (base64String: string) => {
   try {

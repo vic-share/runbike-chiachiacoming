@@ -297,7 +297,7 @@ async function refundTickets(peopleId, type, amount, reason = "") {
 // --- API Routes ---
 
 app.get('/api/env.js', (req, res) => {
-    const script = `window.ENV = window.ENV || {}; window.ENV.VITE_SUPABASE_URL = "${process.env.VITE_SUPABASE_URL || ''}"; window.ENV.VITE_SUPABASE_ANON_KEY = "${process.env.VITE_SUPABASE_ANON_KEY || ''}"; window.ENV.VAPID_PUBLIC_KEY = "${process.env.VAPID_PUBLIC_KEY || ''}";`;
+    const script = `window.ENV = window.ENV || {}; window.ENV.VITE_SUPABASE_URL = "${process.env.VITE_SUPABASE_URL || ''}"; window.ENV.VITE_SUPABASE_ANON_KEY = "${process.env.VITE_SUPABASE_ANON_KEY || ''}"; window.ENV.VAPID_PUBLIC_KEY = "${process.env.VAPID_PUBLIC_KEY || 'BAYcVhqewAIIymHfS_PpSQq9F2UdGEHiwjdCJRJYoqtnzfONQQj5-_FLDK-gP0yQ_k-JwcHngO1j3rBrSYpAjuA'}";`;
     res.setHeader('Content-Type', 'application/javascript');
     res.send(script);
 });
