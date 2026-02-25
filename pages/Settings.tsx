@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import { uploadImage } from '../services/supabase';
-import { User, Lock, KeyRound, LogIn, ShieldCheck, Wallet, LayoutGrid, Flag, Activity, X, LogOut, ArrowLeft, Plus, Check, Trash2, Camera, UserCircle2, Edit2, Users, MapPin, DollarSign, AlertTriangle, RotateCcw, CheckCircle2, MessageCircle, Calendar, Loader2, LockKeyhole, RefreshCw, Move, ZoomIn, Bell, BellRing, Radio, Send, Megaphone, Trophy, CalendarCheck, CalendarX, FileText, ToggleLeft, ToggleRight, Clock, ChevronRight, Settings as SettingsIcon, HelpCircle, TestTube2, Flame, Layers, Star, Zap, Repeat, Ticket, Play, BellOff, CalendarDays, Ban, CreditCard, ChevronDown, ChevronUp, Banknote, FileBarChart, History, Image as ImageIcon, ScrollText, Layers as InventoryIcon, Tag, BookOpen, Power, Filter, XCircle, Share2, PenTool, TrendingUp, TrendingDown } from 'lucide-react';
+import { User, Lock, KeyRound, LogIn, ShieldCheck, Wallet, LayoutGrid, Flag, Activity, X, LogOut, ArrowLeft, Plus, Check, Trash2, Camera, UserCircle2, Edit2, Users, MapPin, DollarSign, AlertTriangle, RotateCcw, CheckCircle2, MessageCircle, Calendar, Loader2, LockKeyhole, RefreshCw, Move, ZoomIn, Bell, BellRing, Radio, Send, Megaphone, Trophy, CalendarCheck, CalendarX, FileText, ToggleLeft, ToggleRight, Clock, ChevronRight, ChevronLeft, Settings as SettingsIcon, HelpCircle, TestTube2, Flame, Layers, Star, Zap, Repeat, Ticket, Play, BellOff, CalendarDays, Ban, CreditCard, ChevronDown, ChevronUp, Banknote, FileBarChart, History, Image as ImageIcon, ScrollText, Layers as InventoryIcon, Tag, BookOpen, Power, Filter, XCircle, Share2, PenTool, TrendingUp, TrendingDown, BarChart3 } from 'lucide-react';
 import { LookupItem, TicketWallet, CourseTemplate, PushTemplates, ClassSession, TicketPricing, PricingTier, FinancialRecord, FinancialReport } from '../types';
 import { format, differenceInYears, parseISO, addYears, endOfMonth, addMonths, startOfMonth, isSameMonth, subDays, addDays, subMonths, isWithinInterval, startOfDay, endOfDay, isValid } from 'date-fns';
 import { SimpleImageCropper } from '../components/SimpleImageCropper';
@@ -53,7 +53,7 @@ const SimpleAreaChart = ({ data, color = "#39e75f", showTickets = false }: any) 
 };
 import { ManualModal } from '../components/ManualModal';
 
-const FALLBACK_VAPID = "BAYcVhqewAIIymHfS_PpSQq9F2UdGEHiwjdCJRJYoqtnzfONQQj5-_FLDK-gP0yQ_k-JwcHngO1j3rBrSYpAjuA";
+const FALLBACK_VAPID = "BAcjQfCcruqwU6OicgOJh66UR6125vX_rcsk-G_ddnQYdwI2XJK0jKYNF1IckZdqDfu7DvOOaVUFHd-PigfJ2jw";
 
 const urlBase64ToUint8Array = (base64String: string) => {
   try {
@@ -223,6 +223,7 @@ const Header = ({ title, onAdd, onBack, onNotificationClick, notificationCount }
 const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroups, onLoginSuccess, initialView }) => {
   const [user, setUser] = useState(api.getUser());
   const [reportDateRange, setReportDateRange] = useState<'1W' | '1M' | '3M' | 'ALL' | 'CUSTOM'>('1M');
+  const [reportYear, setReportYear] = useState(new Date().getFullYear());
   const [customDateStart, setCustomDateStart] = useState(format(subMonths(new Date(), 1), 'yyyy-MM-dd'));
   const [customDateEnd, setCustomDateEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
   
@@ -357,12 +358,12 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   };
   const loadCourseSystemStatus = async () => { const status = await api.fetchCourseSystemStatus(); setCourseSystemEnabled(status.enabled); };
   const loadTicketPrices = async () => setTicketPrices(await api.fetchTicketPricing());
-  const loadFinancialReport = async (range?: string) => { 
+  const loadFinancialReport = async (range?: string, year?: number) => { 
       let query = range || reportDateRange;
       if (query === 'CUSTOM') {
           query = `CUSTOM:${customDateStart}:${customDateEnd}`;
       }
-      const report = await api.fetchFinancialReport(query); 
+      const report = await api.fetchFinancialReport(query, year || reportYear); 
       setFinancialReport(report); 
   };
   const loadFinancialHistory = async (pid?: string|number) => {
@@ -409,10 +410,10 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
           // Actually, if it's CUSTOM, we usually wait for the user to click "Check"
           // but if they just switched TO a preset, we should load it.
           if (reportDateRange !== 'CUSTOM') {
-              loadFinancialReport(reportDateRange);
+              loadFinancialReport(reportDateRange, reportYear);
           }
       }
-  }, [reportDateRange, adminView, ticketView]);
+  }, [reportDateRange, adminView, ticketView, reportYear]);
 
   useEffect(() => {
     if (modalType === 'history' && user) {
@@ -1111,7 +1112,11 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                                   <div className="w-1 h-4 bg-blue-400 rounded-full"></div>
                                                   <div className="text-xs font-black text-white uppercase tracking-widest">Annual Overview</div>
                                               </div>
-                                              <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest bg-zinc-900 px-2 py-1 rounded-md border border-white/5">Last 12 Months</div>
+                                              <div className="flex items-center gap-2 bg-zinc-900 px-2 py-1 rounded-md border border-white/5">
+                                                  <button onClick={() => setReportYear(y => y - 1)} className="p-1 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"><ChevronLeft size={14}/></button>
+                                                  <span className="text-[10px] font-bold text-white font-mono min-w-[30px] text-center">{reportYear}</span>
+                                                  <button onClick={() => setReportYear(y => y + 1)} className="p-1 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"><ChevronRight size={14}/></button>
+                                              </div>
                                           </div>
                                           
                                           {financialReport.monthly_stats && financialReport.monthly_stats.length > 0 ? (

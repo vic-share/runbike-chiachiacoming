@@ -364,8 +364,10 @@ export const api = {
       });
   },
 
-  fetchFinancialReport: async (month?: string): Promise<FinancialReport> => {
-      const qs = month ? `?month=${month}&t=${Date.now()}` : `?t=${Date.now()}`;
+  fetchFinancialReport: async (month?: string, year?: number): Promise<FinancialReport> => {
+      let qs = `?t=${Date.now()}`;
+      if (month) qs += `&month=${month}`;
+      if (year) qs += `&year=${year}`;
       return await safeFetchJson(`/finance/report${qs}`);
   },
 

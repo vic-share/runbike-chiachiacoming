@@ -9,7 +9,7 @@ if (!rootElement) {
 
 const root = createRoot(rootElement);
 
-const FALLBACK_VAPID = "BAYcVhqewAIIymHfS_PpSQq9F2UdGEHiwjdCJRJYoqtnzfONQQj5-_FLDK-gP0yQ_k-JwcHngO1j3rBrSYpAjuA";
+const FALLBACK_VAPID = "BAcjQfCcruqwU6OicgOJh66UR6125vX_rcsk-G_ddnQYdwI2XJK0jKYNF1IckZdqDfu7DvOOaVUFHd-PigfJ2jw";
 
 const initEnv = () => {
   const w = window as any;

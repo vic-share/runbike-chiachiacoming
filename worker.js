@@ -290,7 +290,7 @@ export default {
       await getDB().prepare(`CREATE TABLE IF NOT EXISTS SystemNotifications (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER DEFAULT 1, user_id INTEGER, title TEXT, action_link TEXT, is_read BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run();
 
       if (path === "/api/env.js") {
-        const script = `window.ENV = window.ENV || {}; window.ENV.VITE_SUPABASE_URL = "${env.VITE_SUPABASE_URL || ''}"; window.ENV.VITE_SUPABASE_ANON_KEY = "${env.VITE_SUPABASE_ANON_KEY || ''}"; window.ENV.VAPID_PUBLIC_KEY = "${env.VAPID_PUBLIC_KEY || 'BAYcVhqewAIIymHfS_PpSQq9F2UdGEHiwjdCJRJYoqtnzfONQQj5-_FLDK-gP0yQ_k-JwcHngO1j3rBrSYpAjuA'}";`;
+        const script = `window.ENV = window.ENV || {}; window.ENV.VITE_SUPABASE_URL = "${env.VITE_SUPABASE_URL || ''}"; window.ENV.VITE_SUPABASE_ANON_KEY = "${env.VITE_SUPABASE_ANON_KEY || ''}"; window.ENV.VAPID_PUBLIC_KEY = "${env.VAPID_PUBLIC_KEY || 'BAcjQfCcruqwU6OicgOJh66UR6125vX_rcsk-G_ddnQYdwI2XJK0jKYNF1IckZdqDfu7DvOOaVUFHd-PigfJ2jw'}";`;
         return new Response(script, { headers: { "Content-Type": "application/javascript", ...corsHeaders } });
       }
 
@@ -435,6 +435,7 @@ export default {
       // --- Finance Report ---
       if (path === "/api/finance/report") {
           const range = url.searchParams.get('month'); // Reusing 'month' param for range string to keep API simple or use a new param
+          const yearParam = url.searchParams.get('year');
           let whereClause = `WHERE team_id = ${TEAM_ID}`;
           const params = [];
           
@@ -442,7 +443,11 @@ export default {
           let startDate = '';
           let endDate = '';
           
-          if (range === '1W') {
+          if (yearParam) {
+              // Specific Year Logic (Jan 1 - Dec 31)
+              startDate = `${yearParam}-01-01`;
+              endDate = `${yearParam}-12-31`;
+          } else if (range === '1W') {
               startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
           } else if (range === '1M') {
               startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -482,23 +487,17 @@ export default {
           // Daily Stats for Chart
           const daily = await getDB().prepare(`SELECT date(created_at) as date, SUM(amount_cash) as amount, SUM(amount_ticket) as tickets FROM FinancialRecords ${whereClause} AND transaction_type = 'DEPOSIT' GROUP BY date(created_at) ORDER BY date ASC`).bind(...params).all();
 
-          // Monthly Stats for the last year (Fixed range: last 12 months)
+          // Monthly Stats for the selected year (or current year if not specified)
           // Use Taiwan time (+8) for consistent reporting
-          const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+          const targetYear = yearParam ? parseInt(yearParam) : new Date(Date.now() + 8 * 60 * 60 * 1000).getUTCFullYear();
           const months = [];
-          let y = now.getUTCFullYear();
-          let m = now.getUTCMonth() + 1; // 1-12
           
-          for (let i = 0; i < 12; i++) {
-              months.unshift(`${y}-${String(m).padStart(2, '0')}`);
-              m--;
-              if (m === 0) {
-                  m = 12;
-                  y--;
-              }
+          for (let m = 1; m <= 12; m++) {
+              months.push(`${targetYear}-${String(m).padStart(2, '0')}`);
           }
           
-          const oneYearAgo = months[0] + '-01';
+          const yearStart = `${targetYear}-01-01`;
+          const yearEnd = `${targetYear}-12-31`;
           
           const { results: monthlyData } = await getDB().prepare(`
               SELECT strftime('%Y-%m', datetime(created_at, '+8 hours')) as month, 
@@ -508,8 +507,9 @@ export default {
               WHERE team_id = ${TEAM_ID} 
                 AND transaction_type = 'DEPOSIT' 
                 AND date(datetime(created_at, '+8 hours')) >= ?
+                AND date(datetime(created_at, '+8 hours')) <= ?
               GROUP BY strftime('%Y-%m', datetime(created_at, '+8 hours'))
-          `).bind(oneYearAgo).all();
+          `).bind(yearStart, yearEnd).all();
 
           const monthlyMap = new Map(monthlyData.map((m) => [m.month, m]));
           const monthly = months.map(m => monthlyMap.get(m) || { month: m, revenue: 0, sold: 0 });
