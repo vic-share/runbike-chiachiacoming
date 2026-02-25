@@ -298,6 +298,8 @@ export default {
       await getDB().prepare(`CREATE TABLE IF NOT EXISTS FinancialRecords (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER DEFAULT 1, people_id INTEGER, transaction_type TEXT, amount_cash INTEGER DEFAULT 0, amount_ticket INTEGER DEFAULT 0, ticket_type TEXT, note TEXT, related_session_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run();
       await getDB().prepare(`CREATE TABLE IF NOT EXISTS SystemNotifications (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER DEFAULT 1, user_id INTEGER, title TEXT, action_link TEXT, is_read BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run();
       try { await getDB().prepare("ALTER TABLE ClassSessions ADD COLUMN note TEXT").run(); } catch (e) {}
+      try { await getDB().prepare("ALTER TABLE TrainingRecords ADD COLUMN client_id TEXT").run(); } catch (e) {}
+      try { await getDB().prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_training_client_id ON TrainingRecords(client_id)").run(); } catch (e) {}
 
       if (path === "/api/env.js") {
         const script = `window.ENV = window.ENV || {}; window.ENV.VITE_SUPABASE_URL = "${env.VITE_SUPABASE_URL || ''}"; window.ENV.VITE_SUPABASE_ANON_KEY = "${env.VITE_SUPABASE_ANON_KEY || ''}"; window.ENV.VAPID_PUBLIC_KEY = "${env.VAPID_PUBLIC_KEY || 'BAcjQfCcruqwU6OicgOJh66UR6125vX_rcsk-G_ddnQYdwI2XJK0jKYNF1IckZdqDfu7DvOOaVUFHd-PigfJ2jw'}";`;
@@ -868,8 +870,15 @@ export default {
               return Response.json(results, { headers: corsHeaders }); 
           }
           if (method === "POST") {
-              const { people_id, training_type_id, date, value, score, note } = await request.json();
-              await getDB().prepare("INSERT INTO TrainingRecords (team_id, people_id, training_type_id, date, score, note) VALUES (?, ?, ?, ?, ?, ?)").bind(TEAM_ID, people_id, training_type_id, date, value || score, note || '').run();
+              const { people_id, training_type_id, date, value, score, note, client_id } = await request.json();
+              
+              // Idempotency check
+              if (client_id) {
+                  const exists = await getDB().prepare("SELECT id FROM TrainingRecords WHERE client_id = ?").bind(client_id).first();
+                  if (exists) return Response.json({ success: true, msg: "Duplicate blocked" }, { headers: corsHeaders });
+              }
+
+              await getDB().prepare("INSERT INTO TrainingRecords (team_id, people_id, training_type_id, date, score, note, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(TEAM_ID, people_id, training_type_id, date, value || score, note || '', client_id || null).run();
               return Response.json({ success: true }, { headers: corsHeaders });
           }
           if (method === "PUT") {

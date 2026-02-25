@@ -20,55 +20,58 @@ export const useTrainingSync = () => {
      * Background sync logic
      */
     const syncData = useCallback(async () => {
-        // 1. 嚴格檢查：網路狀態、是否正在同步中
         if (!navigator.onLine || syncLock.current) return;
 
         syncLock.current = true;
         setIsSyncingState(true);
 
         try {
-            const keys = await trainingStore.keys();
+            // 每次同步都重新獲取最新的 keys，避免處理已刪除的資料
+            let keys = await trainingStore.keys();
+            
             for (const key of keys) {
+                // 再次檢查網路，避免在中途斷網
+                if (!navigator.onLine) break;
+
                 const record: any = await trainingStore.getItem(key);
-                
-                // 2. 只有「未同步」且「非上傳中」的資料才處理
-                if (record && !record.is_synced && !record.is_uploading) {
+                if (!record || record.is_synced || record.is_uploading) continue;
+
+                // 1. 立即鎖定該筆資料
+                await trainingStore.setItem(key, { ...record, is_uploading: true });
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 1500); // 稍微放寬到 1.5s
+
+                try {
+                    const res = await api.submitRecord({
+                        ...record.data,
+                        client_id: record.id
+                    }, { signal: controller.signal } as any);
                     
-                    // 3. 立即標記為上傳中，防止其他程序重複讀取
-                    await trainingStore.setItem(key, { ...record, is_uploading: true });
+                    clearTimeout(timeoutId);
 
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 1000);
-
-                    try {
-                        const res = await api.submitRecord({
-                            ...record.data,
-                            client_id: record.id // 傳送 UUID 供後端檢查
-                        }, { signal: controller.signal } as any);
-                        
-                        clearTimeout(timeoutId);
-
-                        if (res.success) {
-                            // 同步成功，移除本地資料
-                            await trainingStore.removeItem(key);
-                        } else {
-                            // 伺服器回傳失敗，取消上傳中標記，等待下次重試
-                            await trainingStore.setItem(key, { ...record, is_uploading: false });
-                        }
-                    } catch (error: any) {
-                        clearTimeout(timeoutId);
-                        // 發生錯誤或超時，還原狀態，等待下次重試
+                    if (res && res.success) {
+                        // 2. 同步成功，徹底移除
+                        await trainingStore.removeItem(key);
+                        console.log(`[Sync] Record ${key} synced and removed.`);
+                    } else {
+                        // 伺服器明確回傳失敗
                         await trainingStore.setItem(key, { ...record, is_uploading: false });
-                        
-                        if (error.name === 'AbortError') {
-                            console.warn(`[Sync Timeout] Record ${key} timed out.`);
-                        }
-                        continue;
+                    }
+                } catch (error: any) {
+                    clearTimeout(timeoutId);
+                    // 網路錯誤或超時，還原狀態
+                    await trainingStore.setItem(key, { ...record, is_uploading: false });
+                    
+                    if (error.name === 'AbortError') {
+                        console.warn(`[Sync Timeout] ${key} timed out, will retry.`);
+                    } else {
+                        console.error(`[Sync Error] ${key}:`, error);
                     }
                 }
             }
         } catch (error) {
-            console.error('[Sync Error] Global sync process failed:', error);
+            console.error('[Sync Error] Global sync failed:', error);
         } finally {
             syncLock.current = false;
             setIsSyncingState(false);
