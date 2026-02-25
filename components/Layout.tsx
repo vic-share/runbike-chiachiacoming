@@ -74,6 +74,15 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, titl
               try {
                   const res = await api.fetchUnreadCount(user.id);
                   setUnreadCount(res.count);
+
+                  // 🟢 Update App Badge (Desktop/Mobile PWA)
+                  if ('setAppBadge' in navigator) {
+                      if (res.count > 0) {
+                          navigator.setAppBadge(res.count).catch(e => console.error("Badge Error:", e));
+                      } else if ('clearAppBadge' in navigator) {
+                          navigator.clearAppBadge().catch(e => console.error("Badge Clear Error:", e));
+                      }
+                  }
               } catch (e: any) {
                   // If endpoint missing (404), stop polling to prevent spam
                   if (e.message.includes('404')) {

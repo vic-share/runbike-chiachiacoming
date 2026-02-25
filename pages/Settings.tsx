@@ -491,7 +491,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
               people_id: user.id
           };
 
-          const WORKER_URL = (meta.env && meta.env.VITE_WORKER_URL) || (typeof window !== 'undefined' && (window as any).ENV && (window as any).ENV.VITE_WORKER_URL) || '/api'; 
+          const WORKER_URL = 'https://runbike-chiachiacoming.sky070680.workers.dev/api'; 
 
           const res = await fetch(`${WORKER_URL}/subscribe`, {
               method: 'POST',
@@ -517,7 +517,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
           const sub = await registration.pushManager.getSubscription();
           if (sub) {
               const meta = import.meta as any; 
-              const WORKER_URL = (meta.env && meta.env.VITE_WORKER_URL) || (typeof window !== 'undefined' && (window as any).ENV && (window as any).ENV.VITE_WORKER_URL) || '/api'; 
+              const WORKER_URL = 'https://runbike-chiachiacoming.sky070680.workers.dev/api'; 
 
               await fetch(`${WORKER_URL}/unsubscribe`, {
                   method: 'POST',
@@ -551,14 +551,14 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
       // @ts-ignore
       const meta = import.meta as any; 
       // @ts-ignore
-      const WORKER_URL = (meta.env && meta.env.VITE_WORKER_URL) || (typeof window !== 'undefined' && window.ENV && window.ENV.VITE_WORKER_URL) || '/api'; 
+      const WORKER_URL = 'https://runbike-chiachiacoming.sky070680.workers.dev/api'; 
       try { 
           await fetch(`${WORKER_URL}/admin/push`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('CHIACHIA_TOKEN')}` }, body: JSON.stringify({ title: finalTitle, body: finalBody, url: '/races', target_role: 'COACH' }) }); 
           alert(`測試發送成功 (發送給教練群)`); 
       } catch (e: any) { alert('連線錯誤'); } finally { setIsSubmitting(false); } 
   };
   
-  const handleSendBroadcast = async () => { if (!pushMessage.body) return; setIsSubmitting(true); const meta = import.meta as any; const WORKER_URL = (meta.env && meta.env.VITE_WORKER_URL) || (typeof window !== 'undefined' && (window as any).ENV && (window as any).ENV.VITE_WORKER_URL) || '/api'; try { await fetch(`${WORKER_URL}/admin/push`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('CHIACHIA_TOKEN')}` }, body: JSON.stringify({ title: pushMessage.title || '', body: pushMessage.body, url: pushMessage.url, target_role: 'all' }) }); alert(`成功發送`); setPushMessage({ title: '', body: '', url: '/' }); } catch (e) { alert('發送失敗'); } finally { setIsSubmitting(false); } };
+  const handleSendBroadcast = async () => { if (!pushMessage.body) return; setIsSubmitting(true); const meta = import.meta as any; const WORKER_URL = 'https://runbike-chiachiacoming.sky070680.workers.dev/api'; try { await fetch(`${WORKER_URL}/admin/push`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('CHIACHIA_TOKEN')}` }, body: JSON.stringify({ title: pushMessage.title || '', body: pushMessage.body, url: pushMessage.url, target_role: 'all' }) }); alert(`成功發送`); setPushMessage({ title: '', body: '', url: '/' }); } catch (e) { alert('發送失敗'); } finally { setIsSubmitting(false); } };
   const handleSelectPerson = (person: LookupItem) => { setSelectedPerson(person); setStep('password'); setErrorMsg(''); setLoginPass(''); };
   
   useEffect(() => {

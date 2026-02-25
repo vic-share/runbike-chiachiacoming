@@ -582,7 +582,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       for (const event of filteredEvents) {
         if (event.location && event.location.startsWith('http') && !urlTitles[event.location]) {
           try {
-            const response = await fetch(`/api/url-title?url=${encodeURIComponent(event.location)}`);
+            const response = await fetch(`https://runbike-chiachiacoming.sky070680.workers.dev/api/url-title?url=${encodeURIComponent(event.location)}`);
             if (response.ok) {
               const data = await response.json();
               newTitles[event.location] = data.title || new URL(event.location).hostname.replace('www.', '');

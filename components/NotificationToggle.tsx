@@ -22,7 +22,7 @@ const urlBase64ToUint8Array = (base64String: string) => {
 };
 
 // @ts-ignore
-const WORKER_URL = (import.meta.env && import.meta.env.VITE_WORKER_URL) || (typeof window !== 'undefined' && window.ENV && window.ENV.VITE_WORKER_URL) || '/api';
+const WORKER_URL = 'https://runbike-chiachiacoming.sky070680.workers.dev/api';
 
 const NotificationToggle: React.FC = () => {
   const [permission, setPermission] = useState<NotificationPermission>('default');
