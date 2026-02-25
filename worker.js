@@ -747,7 +747,40 @@ export default {
            }));
            return Response.json(enhanced, { headers: corsHeaders });
       }
-      if (path === "/api/courses/templates") { if(method==="GET") return Response.json((await getDB().prepare(`SELECT * FROM CourseTemplates WHERE team_id = ${TEAM_ID}`).all()).results, { headers: corsHeaders }); if(method==="POST") { const body=await request.json(); if(body.id) await getDB().prepare(`UPDATE CourseTemplates SET name=?, day_of_week=?, start_time=?, end_time=?, location=?, price=?, max_students=?, ticket_type=?, default_student_ids=?, is_auto_scheduled=? WHERE id=?`).bind(body.name,body.day_of_week,body.start_time,body.end_time,body.location,body.price,body.max_students,body.ticket_type,JSON.stringify(body.default_student_ids),body.is_auto_scheduled?1:0,body.id).run(); else await getDB().prepare(`INSERT INTO CourseTemplates (team_id,name,day_of_week,start_time,end_time,location,price,max_students,ticket_type,default_student_ids,is_auto_scheduled) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(TEAM_ID,body.name,body.day_of_week,body.start_time,body.end_time,body.location,body.price,body.max_students,body.ticket_type,JSON.stringify(body.default_student_ids),body.is_auto_scheduled?1:0).run(); return Response.json({success:true},{headers:corsHeaders}); } if(method==="DELETE") { await getDB().prepare(`DELETE FROM CourseTemplates WHERE id=?`).bind(url.searchParams.get('id')).run(); return Response.json({success:true},{headers:corsHeaders}); } }
+      if (path === "/api/courses/templates") {
+          if (method === "GET") {
+              const { results } = await getDB().prepare(`SELECT * FROM CourseTemplates WHERE team_id = ${TEAM_ID}`).all();
+              return Response.json(results, { headers: corsHeaders });
+          }
+          if (method === "POST") {
+              const body = await request.json();
+              const name = body.name || '';
+              const day_of_week = body.day_of_week ?? 1;
+              const start_time = body.start_time || '00:00';
+              const end_time = body.end_time || '00:00';
+              const location = body.location || '';
+              const price = body.price || 0;
+              const max_students = body.max_students || 20;
+              const ticket_type = body.ticket_type || 'REGULAR';
+              const default_student_ids = JSON.stringify(body.default_student_ids || []);
+              const is_auto_scheduled = body.is_auto_scheduled ? 1 : 0;
+
+              if (body.id) {
+                  await getDB().prepare(`UPDATE CourseTemplates SET name=?, day_of_week=?, start_time=?, end_time=?, location=?, price=?, max_students=?, ticket_type=?, default_student_ids=?, is_auto_scheduled=? WHERE id=?`)
+                      .bind(name, day_of_week, start_time, end_time, location, price, max_students, ticket_type, default_student_ids, is_auto_scheduled, body.id)
+                      .run();
+              } else {
+                  await getDB().prepare(`INSERT INTO CourseTemplates (team_id, name, day_of_week, start_time, end_time, location, price, max_students, ticket_type, default_student_ids, is_auto_scheduled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                      .bind(TEAM_ID, name, day_of_week, start_time, end_time, location, price, max_students, ticket_type, default_student_ids, is_auto_scheduled)
+                      .run();
+              }
+              return Response.json({ success: true }, { headers: corsHeaders });
+          }
+          if (method === "DELETE") {
+              await getDB().prepare(`DELETE FROM CourseTemplates WHERE id=?`).bind(url.searchParams.get('id')).run();
+              return Response.json({ success: true }, { headers: corsHeaders });
+          }
+      }
       if (path === "/api/courses/join") { const { session_id, people_id } = await request.json(); const existing = await getDB().prepare("SELECT * FROM Enrollments WHERE session_id = ? AND people_id = ?").bind(session_id, people_id).first(); if(existing) await getDB().prepare("UPDATE Enrollments SET status = 'ENROLLED' WHERE id = ?").bind(existing.id).run(); else await getDB().prepare("INSERT INTO Enrollments (session_id, people_id, status) VALUES (?, ?, 'ENROLLED')").bind(session_id, people_id).run(); return Response.json({ success: true }, { headers: corsHeaders }); }
       if (path === "/api/courses/exit") { const { session_id, people_id, reason } = await request.json(); await getDB().prepare("UPDATE Enrollments SET status = 'CANCELLED', note = ? WHERE session_id = ? AND people_id = ?").bind(reason, session_id, people_id).run(); return Response.json({ success: true }, { headers: corsHeaders }); }
       if (path === "/api/courses/sessions" && method === "DELETE") { const id = url.searchParams.get('id'); await getDB().prepare("DELETE FROM ClassSessions WHERE id = ?").bind(id).run(); await getDB().prepare("DELETE FROM Enrollments WHERE session_id = ?").bind(id).run(); return Response.json({ success: true }, { headers: corsHeaders }); }
