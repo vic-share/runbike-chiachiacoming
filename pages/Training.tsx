@@ -31,6 +31,8 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const [showBioModal, setShowBioModal] = useState(false); 
   const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, id?: string|number}>({ show: false });
   const [submitting, setSubmitting] = useState(false);
+  const [localLastValue, setLocalLastValue] = useState<string | null>(null); // 本地樂觀最後一筆
+  const [localCountOffset, setLocalCountOffset] = useState(0); // 本地樂觀次數偏移
   
   const { saveRecord } = useTrainingSync();
   
@@ -81,6 +83,8 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   }, [filteredPeople]);
 
   useEffect(() => {
+      setLocalLastValue(null);
+      setLocalCountOffset(0);
       if (trainingTypes.length > 0 && !selectedType) {
           setSelectedType(trainingTypes[0].id);
       }
@@ -280,27 +284,29 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       setSubmitting(true);
       try {
           const typeId = getSelectedTypeId();
+          const valStr = parseFloat(inputValue).toFixed(3);
           const recordData = { 
               date: format(new Date(), 'yyyy-MM-dd'), 
               item: 'training', 
               people_id: targetId, 
-              value: parseFloat(inputValue).toFixed(3), 
+              value: valStr, 
               training_type_id: typeId 
           };
 
-          // 1. 離線優先：立刻寫入本地 IndexedDB (極速)
+          // 1. 離線優先儲存
           await saveRecord(recordData);
 
-          // 2. 關鍵優化：立刻重置輸入與放開按鈕鎖定，讓教練可以錄下一筆
+          // 2. 樂觀更新：立刻更新 PREV 和 TODAY
+          setLocalLastValue(valStr);
+          setLocalCountOffset(prev => prev + 1);
+          
           setInputValue('');
           setFeedbackMsg('SAVED');
           setSubmitting(false); 
 
           localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now()));
           
-          // 3. 背景觸發資料更新 (不 await，不阻塞 UI)
           refreshData();
-          
           setTimeout(() => setFeedbackMsg(null), 1500);
       } catch (e) { 
           alert('紀錄失敗'); 
@@ -518,7 +524,18 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                    
                    {/* Conditionally hide PREV/TODAY if Custom Date Filter is active (to avoid context confusion) */}
                    {dateRange !== 'PICK' && (
-                       <div className="flex items-center gap-4 mb-1"> {lastRecordValue && ( <div className="text-xs font-black text-zinc-600 font-mono flex items-center gap-1.5 px-2 py-0.5 rounded-lg border border-transparent"> <span>PREV</span> <span className="text-zinc-400">{parseFloat(lastRecordValue).toFixed(3)}s</span> </div> )} <div className="text-xs font-black text-zinc-600 font-mono flex items-center gap-1.5 bg-zinc-900/40 px-2 py-0.5 rounded-lg border border-white/5"> <span>TODAY</span> <span className="text-chiachia-green">{todayCount}</span> </div> </div>
+                       <div className="flex items-center gap-4 mb-1"> 
+                           {(localLastValue || lastRecordValue) && ( 
+                               <div className="text-xs font-black text-zinc-600 font-mono flex items-center gap-1.5 px-2 py-0.5 rounded-lg border border-transparent"> 
+                                   <span>PREV</span> 
+                                   <span className="text-zinc-400">{parseFloat(localLastValue || lastRecordValue || '0').toFixed(3)}s</span> 
+                               </div> 
+                           )} 
+                           <div className="text-xs font-black text-zinc-600 font-mono flex items-center gap-1.5 bg-zinc-900/40 px-2 py-0.5 rounded-lg border border-white/5"> 
+                               <span>TODAY</span> 
+                               <span className="text-chiachia-green">{todayCount + localCountOffset}</span> 
+                           </div> 
+                       </div>
                    )}
 
                    <div className="relative w-full text-center px-4"> <span className={`font-mono font-black tracking-tighter leading-none text-white drop-shadow-[0_0_30px_rgba(57,231,95,0.1)] transition-all ${inputValue.length > 4 ? 'text-6xl' : 'text-7xl'}`}> {inputValue || '0.00'} </span> <span className="text-2xl font-black text-zinc-700 ml-1 italic absolute bottom-4">s</span> </div>
