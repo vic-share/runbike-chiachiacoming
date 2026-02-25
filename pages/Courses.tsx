@@ -175,7 +175,8 @@ const Courses: React.FC<{ courseSystemEnabled?: boolean, people?: LookupItem[] }
             // Use manageLookup to update the person
             await api.manageLookup('people', convertData.name, showConvertModal.student.id, false, false, {
                 birthday: convertData.birthday,
-                roles: ['RIDER'] // Remove TRIAL, add RIDER
+                roles: ['RIDER'], // Remove TRIAL, add RIDER
+                password: '123456' // Set default password
             });
             await loadData();
             setShowConvertModal({ show: false });

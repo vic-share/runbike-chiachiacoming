@@ -283,6 +283,15 @@ export default {
     const path = url.pathname;
     const method = request.method;
     const getDB = () => env.RUNBIKE_DB;
+    const TEAM_ID = 1;
+
+    // Helper: Hash Password with Salt
+    const hashPassword = async (password, salt) => {
+        const text = String(password || '').trim() + (salt || '');
+        return await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)).then(buf => 
+            Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+        );
+    };
 
     try {
       // Lazy Init
@@ -311,7 +320,7 @@ export default {
               if (extras.b_url !== undefined) { query += ", full_photo_url = ?"; params.push(extras.b_url); }
               
               if (extras.password) {
-                  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(extras.password).trim())).then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
+                  const hash = await hashPassword(extras.password, env.PASSWORD_SALT);
                   query += ", password = ?";
                   params.push(hash);
               }
@@ -332,8 +341,8 @@ export default {
           }
           if (method === "POST") {
               const { name, full_name, birthday, roles } = await request.json();
-              // Default password: 123456
-              const defaultPass = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92";
+              // Default password: 123456 (with salt)
+              const defaultPass = await hashPassword("123456", env.PASSWORD_SALT);
               const res = await getDB().prepare("INSERT INTO People (team_id, name, full_name, birthday, roles, password) VALUES (?, ?, ?, ?, ?, ?)").bind(TEAM_ID, name, full_name, birthday || null, JSON.stringify(roles || ['RIDER']), defaultPass).run();
               return Response.json({ success: true, id: res.meta.last_row_id }, { headers: corsHeaders });
           }
@@ -542,7 +551,7 @@ export default {
         const { id, password } = await request.json();
         const person = await getDB().prepare(`SELECT id, team_id, name, roles, password, birthday, avatar_url as s_url, full_photo_url as b_url, bio as myword, is_retired as is_hidden, full_name, created_at FROM People WHERE id = ? AND team_id = ?`).bind(id, TEAM_ID).first();
         if (!person) return Response.json({ success: false, msg: "查無此人" }, { headers: corsHeaders });
-        const inputHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(password || '').trim())).then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
+        const inputHash = await hashPassword(password, env.PASSWORD_SALT);
         const storedPass = person.password ? String(person.password) : null;
         if (!storedPass || inputHash !== storedPass) return Response.json({ success: false, msg: "密碼錯誤" }, { headers: corsHeaders });
         const token = crypto.randomUUID();
@@ -590,7 +599,8 @@ export default {
       if (path === "/api/people/trial" && method === "POST") {
           const { name } = await request.json();
           // Create a trial rider with roles=['TRIAL'] and is_hidden=1
-          const passwordHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(name)).then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
+          // Default password for trial is their name + salt
+          const passwordHash = await hashPassword(name, env.PASSWORD_SALT);
           const res = await getDB().prepare("INSERT INTO People (team_id, name, roles, is_retired, password) VALUES (?, ?, ?, 1, ?)").bind(TEAM_ID, name, JSON.stringify(['TRIAL']), passwordHash).run();
           return Response.json({ success: true, id: res.meta.last_row_id }, { headers: corsHeaders });
       }
