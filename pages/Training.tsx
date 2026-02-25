@@ -33,6 +33,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const [submitting, setSubmitting] = useState(false);
   const [localLastValue, setLocalLastValue] = useState<string | null>(null); // 本地樂觀最後一筆
   const [localCountOffset, setLocalCountOffset] = useState(0); // 本地樂觀次數偏移
+  const lastSavedClientId = useRef<string | null>(null); // 紀錄最後一次儲存的 UUID
   
   const { saveRecord } = useTrainingSync();
   
@@ -85,6 +86,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   useEffect(() => {
       setLocalLastValue(null);
       setLocalCountOffset(0);
+      lastSavedClientId.current = null;
       if (trainingTypes.length > 0 && !selectedType) {
           setSelectedType(trainingTypes[0].id);
       }
@@ -276,6 +278,20 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       if (inputValue.includes('.')) { const [_, decimalPart] = inputValue.split('.'); if (decimalPart && decimalPart.length >= 3) return; }
       setInputValue(prev => prev + digit);
   };
+  // 監聽 sessionRecords 變化，進行對帳 (Reconciliation)
+  useEffect(() => {
+      if (lastSavedClientId.current && sessionRecords.length > 0) {
+          // 檢查伺服器回傳的資料中，是否已經包含我們剛存的那一筆
+          const isSynced = sessionRecords.some((r: any) => r.client_id === lastSavedClientId.current);
+          if (isSynced) {
+              // 如果伺服器已經有這筆資料了，就重置樂觀更新狀態，避免重複計算
+              setLocalLastValue(null);
+              setLocalCountOffset(0);
+              lastSavedClientId.current = null;
+          }
+      }
+  }, [sessionRecords]);
+
   const handleRecordSubmit = async () => {
       if (!inputValue || parseFloat(inputValue) <= 0) return;
       const targetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
@@ -294,7 +310,8 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
           };
 
           // 1. 離線優先儲存
-          await saveRecord(recordData);
+          const clientId = await saveRecord(recordData);
+          lastSavedClientId.current = clientId;
 
           // 2. 樂觀更新：立刻更新 PREV 和 TODAY
           setLocalLastValue(valStr);
