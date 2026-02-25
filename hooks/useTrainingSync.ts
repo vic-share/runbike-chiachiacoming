@@ -26,48 +26,54 @@ export const useTrainingSync = () => {
         setIsSyncingState(true);
 
         try {
-            // 每次同步都重新獲取最新的 keys，避免處理已刪除的資料
-            let keys = await trainingStore.keys();
-            
+            // 1. 獲取所有資料並按時間排序，確保「先紀錄的先同步」
+            const keys = await trainingStore.keys();
+            const allRecords: any[] = [];
             for (const key of keys) {
-                // 再次檢查網路，避免在中途斷網
+                const record = await trainingStore.getItem(key);
+                if (record) allRecords.push(record);
+            }
+
+            // 按時間戳記由舊到新排序
+            const sortedRecords = allRecords
+                .filter(r => !r.is_synced && !r.is_uploading)
+                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            
+            for (const record of sortedRecords) {
                 if (!navigator.onLine) break;
 
-                const record: any = await trainingStore.getItem(key);
-                if (!record || record.is_synced || record.is_uploading) continue;
+                const key = record.id;
 
-                // 1. 立即鎖定該筆資料
+                // 2. 鎖定該筆資料
                 await trainingStore.setItem(key, { ...record, is_uploading: true });
 
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 1500); // 稍微放寬到 1.5s
+                const timeoutId = setTimeout(() => controller.abort(), 15000); 
 
                 try {
                     const res = await api.submitRecord({
                         ...record.data,
-                        client_id: record.id
+                        client_id: record.id,
+                        created_at: record.created_at // 傳送手機端的原始時間
                     }, { signal: controller.signal } as any);
                     
                     clearTimeout(timeoutId);
 
                     if (res && res.success) {
-                        // 2. 同步成功，徹底移除
                         await trainingStore.removeItem(key);
-                        console.log(`[Sync] Record ${key} synced and removed.`);
+                        console.log(`[Sync Success] ${key} - ${record.created_at}`);
+                        await new Promise(resolve => setTimeout(resolve, 500));
                     } else {
-                        // 伺服器明確回傳失敗
                         await trainingStore.setItem(key, { ...record, is_uploading: false });
                     }
                 } catch (error: any) {
                     clearTimeout(timeoutId);
-                    // 網路錯誤或超時，還原狀態
                     await trainingStore.setItem(key, { ...record, is_uploading: false });
                     
                     if (error.name === 'AbortError') {
-                        console.warn(`[Sync Timeout] ${key} timed out, will retry.`);
-                    } else {
-                        console.error(`[Sync Error] ${key}:`, error);
+                        console.warn(`[Sync Timeout] ${key} timed out.`);
                     }
+                    await new Promise(resolve => setTimeout(resolve, 3000));
                 }
             }
         } catch (error) {
