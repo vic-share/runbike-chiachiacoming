@@ -276,6 +276,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       if (!inputValue || parseFloat(inputValue) <= 0) return;
       const targetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
       if (!targetId) { setShowRiderSelectModal(true); return; }
+      
       setSubmitting(true);
       try {
           const typeId = getSelectedTypeId();
@@ -287,14 +288,24 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
               training_type_id: typeId 
           };
 
-          // 離線優先：立刻寫入 IndexedDB 並觸發背景同步
+          // 1. 離線優先：立刻寫入本地 IndexedDB (極速)
           await saveRecord(recordData);
 
+          // 2. 關鍵優化：立刻重置輸入與放開按鈕鎖定，讓教練可以錄下一筆
+          setInputValue('');
+          setFeedbackMsg('SAVED');
+          setSubmitting(false); 
+
           localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now()));
-          setFeedbackMsg('SAVED'); setInputValue('');
-          await new Promise(r => setTimeout(r, 800)); await refreshData();
+          
+          // 3. 背景觸發資料更新 (不 await，不阻塞 UI)
+          refreshData();
+          
           setTimeout(() => setFeedbackMsg(null), 1500);
-      } catch (e) { alert('紀錄失敗'); } finally { setSubmitting(false); }
+      } catch (e) { 
+          alert('紀錄失敗'); 
+          setSubmitting(false); 
+      }
   };
   const handleRiderSelection = (id: string) => {
       if (isRecordingMode) {
