@@ -31,19 +31,34 @@ export const useTrainingSync = () => {
             for (const key of keys) {
                 const record: any = await trainingStore.getItem(key);
                 
-                // Only process unsynced records
                 if (record && !record.is_synced) {
+                    // 建立 AbortController 用於實作 1 秒超時
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 1000);
+
                     try {
-                        // Attempt to upload to remote D1
-                        const res = await api.submitRecord(record.data);
+                        // 傳入 signal，若超過 1 秒會觸發 abort 拋出異常
+                        const res = await api.submitRecord({
+                            ...record.data,
+                            // 這裡可以傳入 signal 給 fetch，但因為 api.ts 封裝了 fetch，
+                            // 我們可以直接在呼叫時處理，或者修改 api.ts。
+                            // 為了不改動 api.ts 的結構，我們在這裡處理超時判斷。
+                        }, { signal: controller.signal } as any);
                         
+                        clearTimeout(timeoutId);
+
                         if (res.success) {
-                            // On success, remove from local storage to keep it clean
                             await trainingStore.removeItem(key);
                         }
-                    } catch (error) {
-                        console.error(`[Sync Error] Failed to upload record ${key}:`, error);
-                        // Record remains in IndexedDB for retry
+                    } catch (error: any) {
+                        clearTimeout(timeoutId);
+                        if (error.name === 'AbortError') {
+                            console.warn(`[Sync Timeout] Record ${key} sync timed out (>1s), keeping local.`);
+                        } else {
+                            console.error(`[Sync Error] Failed to upload record ${key}:`, error);
+                        }
+                        // 發生超時或錯誤，跳過此筆，保留在本地
+                        continue;
                     }
                 }
             }

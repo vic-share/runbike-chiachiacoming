@@ -314,10 +314,11 @@ export const api = {
     });
   },
 
-  submitRecord: async (data: any) => {
+  submitRecord: async (data: any, options?: RequestInit) => {
     return await safeFetchJson('/training-records', {
       method: 'POST',
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      ...options
     });
   },
 
