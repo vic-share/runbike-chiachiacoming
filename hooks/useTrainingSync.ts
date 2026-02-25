@@ -14,7 +14,22 @@ const trainingStore = localforage.createInstance({
  */
 export const useTrainingSync = () => {
     const [isSyncingState, setIsSyncingState] = useState(false);
-    const syncLock = useRef(false); // 使用 Ref 進行即時同步鎖定
+    const [pendingCount, setPendingCount] = useState(0); // 待同步筆數
+    const syncLock = useRef(false);
+
+    /**
+     * 重置所有本地資料的上傳狀態 (防止意外卡死)
+     */
+    const resetUploadingStatus = async () => {
+        const keys = await trainingStore.keys();
+        for (const key of keys) {
+            const record: any = await trainingStore.getItem(key);
+            if (record && record.is_uploading) {
+                await trainingStore.setItem(key, { ...record, is_uploading: false });
+            }
+        }
+        setPendingCount(keys.length);
+    };
 
     /**
      * Background sync logic
@@ -26,25 +41,32 @@ export const useTrainingSync = () => {
         setIsSyncingState(true);
 
         try {
-            // 1. 獲取所有資料並按時間排序，確保「先紀錄的先同步」
-            const keys = await trainingStore.keys();
-            const allRecords: any[] = [];
-            for (const key of keys) {
-                const record = await trainingStore.getItem(key);
-                if (record) allRecords.push(record);
-            }
-
-            // 按時間戳記由舊到新排序
-            const sortedRecords = allRecords
-                .filter(r => !r.is_synced && !r.is_uploading)
-                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-            
-            for (const record of sortedRecords) {
+            // 使用 while 迴圈，確保同步過程中新加入的資料也能被處理
+            while (true) {
                 if (!navigator.onLine) break;
 
+                const keys = await trainingStore.keys();
+                setPendingCount(keys.length);
+
+                if (keys.length === 0) break;
+
+                // 找出所有待同步且非上傳中的資料
+                const allRecords: any[] = [];
+                for (const key of keys) {
+                    const record: any = await trainingStore.getItem(key);
+                    if (record && !record.is_synced && !record.is_uploading) {
+                        allRecords.push(record);
+                    }
+                }
+
+                if (allRecords.length === 0) break;
+
+                // 排序：最舊的優先
+                allRecords.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                const record = allRecords[0];
                 const key = record.id;
 
-                // 2. 鎖定該筆資料
+                // 1. 鎖定
                 await trainingStore.setItem(key, { ...record, is_uploading: true });
 
                 const controller = new AbortController();
@@ -54,39 +76,40 @@ export const useTrainingSync = () => {
                     const res = await api.submitRecord({
                         ...record.data,
                         client_id: record.id,
-                        created_at: record.created_at // 傳送手機端的原始時間
+                        created_at: record.created_at
                     }, { signal: controller.signal } as any);
                     
                     clearTimeout(timeoutId);
 
                     if (res && res.success) {
                         await trainingStore.removeItem(key);
-                        console.log(`[Sync Success] ${key} - ${record.created_at}`);
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        console.log(`[Sync Success] ${key}`);
+                        await new Promise(resolve => setTimeout(resolve, 200));
                     } else {
                         await trainingStore.setItem(key, { ...record, is_uploading: false });
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                     }
                 } catch (error: any) {
                     clearTimeout(timeoutId);
                     await trainingStore.setItem(key, { ...record, is_uploading: false });
                     
                     if (error.name === 'AbortError') {
-                        console.warn(`[Sync Timeout] ${key} timed out.`);
+                        console.warn(`[Sync Timeout] ${key}`);
                     }
                     await new Promise(resolve => setTimeout(resolve, 3000));
+                    if (!navigator.onLine) break;
                 }
             }
         } catch (error) {
             console.error('[Sync Error] Global sync failed:', error);
         } finally {
+            const finalKeys = await trainingStore.keys();
+            setPendingCount(finalKeys.length);
             syncLock.current = false;
             setIsSyncingState(false);
         }
     }, []);
 
-    /**
-     * Save record locally first
-     */
     const saveRecord = async (data: any) => {
         const id = crypto.randomUUID();
         const record = {
@@ -98,15 +121,17 @@ export const useTrainingSync = () => {
         };
 
         await trainingStore.setItem(id, record);
+        setPendingCount(prev => prev + 1);
         
-        // 觸發同步，但 syncData 內部有鎖，所以是安全的
         syncData();
-
         return id;
     };
 
     useEffect(() => {
-        syncData();
+        resetUploadingStatus().then(() => {
+            syncData();
+        });
+
         const handleOnline = () => syncData();
         window.addEventListener('online', handleOnline);
         return () => window.removeEventListener('online', handleOnline);
@@ -115,6 +140,7 @@ export const useTrainingSync = () => {
     return { 
         saveRecord, 
         syncData, 
-        isSyncing: isSyncingState 
+        isSyncing: isSyncingState,
+        pendingCount
     };
 };
