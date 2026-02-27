@@ -10,7 +10,7 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/cccm.jpg",
+      "src": "/cccm.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"

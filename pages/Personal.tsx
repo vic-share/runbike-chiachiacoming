@@ -47,7 +47,7 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
     <div className="h-full overflow-y-auto px-4 py-6 space-y-8 no-scrollbar pb-28">
       {/* Profile Header */}
       <section className="relative">
-         <div className="h-48 rounded-[32px] bg-zinc-900 overflow-hidden relative border border-white/5">
+         <div className="aspect-[4/5] rounded-[32px] bg-zinc-900 overflow-hidden relative border border-white/5">
             {person?.b_url ? (
               <img src={person.b_url.split('#')[0]} className="w-full h-full object-cover opacity-60" />
             ) : (
