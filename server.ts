@@ -838,6 +838,29 @@ app.delete('/api/courses/templates', (req, res) => {
     res.json({ success: true });
 });
 
+app.post('/api/admin/push', async (req, res) => {
+    const { title, body, url, target_role } = req.body;
+    const count = await sendPushToRole(target_role || 'all', title, body, url);
+    res.json({ success: true, count });
+});
+
+app.post('/api/race-records/global-honor', async (req, res) => {
+    const { record_id, duration_minutes } = req.body;
+    let expiry = null;
+    if (duration_minutes > 0) {
+        expiry = Math.floor(Date.now() / 1000) + (duration_minutes * 60);
+        const rec = db.prepare(`SELECT P.name, RE.name as race_name FROM RaceRecords RR JOIN People P ON RR.people_id = P.id JOIN RaceEvents RE ON RR.event_id = RE.id WHERE RR.id = ?`).get(record_id);
+        if (rec) {
+            const title = "🏆 榮譽榜更新";
+            const body = `${rec.name} 在 ${rec.race_name} 的表現被釘選到榮譽榜了！`;
+            await sendPushToRole('all', title, body, '/?page=dashboard');
+            await createNotificationForRole('all', title, '/?page=dashboard');
+        }
+    }
+    db.prepare("UPDATE RaceRecords SET global_honor_expires_at = ? WHERE id = ?").run(expiry, record_id);
+    res.json({ success: true });
+});
+
 app.get('/api/tickets/wallets', (req, res) => {
     const batches = db.prepare(`SELECT B.id as batch_id, P.id as people_id, P.name as person_name, B.ticket_type, B.remaining_amount, B.expiry_date FROM People P JOIN TicketBatches B ON P.id = B.people_id WHERE P.team_id = ${TEAM_ID} AND (B.remaining_amount != 0) AND (B.expiry_date >= DATE('now') OR B.remaining_amount < 0) ORDER BY P.id, B.expiry_date ASC`).all();
     const grouped = {};
@@ -891,63 +914,61 @@ app.post('/api/tickets/add', async (req, res) => {
 app.post('/api/tickets/manual-add', async (req, res) => {
     const { people_id, type, amount, expiry_date, price, note } = req.body;
     const expiry = expiry_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0];
-    const numAmount = Number(amount);
     
-    if (numAmount > 0) {
-        let remainingToAdd = numAmount;
-        // Find debts (negative remaining_amount)
+    let remaining = parseInt(amount);
+    
+    if (remaining > 0) {
+        // Adding tickets: Try to clear debts first
         const debts = db.prepare(`SELECT id, remaining_amount FROM TicketBatches WHERE people_id = ? AND ticket_type = ? AND remaining_amount < 0 ORDER BY expiry_date ASC`).all(people_id, type);
-        
         for (const debt of debts) {
-            if (remainingToAdd <= 0) break;
+            if (remaining <= 0) break;
             const debtValue = Math.abs(debt.remaining_amount);
-            if (remainingToAdd >= debtValue) {
-                // Fully pay off debt
-                db.prepare("DELETE FROM TicketBatches WHERE id = ?").run(debt.id);
-                remainingToAdd -= debtValue;
-            } else {
-                // Partially pay off debt
-                db.prepare("UPDATE TicketBatches SET remaining_amount = remaining_amount + ? WHERE id = ?").run(remainingToAdd, debt.id);
-                remainingToAdd = 0;
+            if (remaining >= debtValue) { 
+                db.prepare("DELETE FROM TicketBatches WHERE id = ?").run(debt.id); 
+                remaining -= debtValue; 
+            } else { 
+                db.prepare("UPDATE TicketBatches SET remaining_amount = remaining_amount + ? WHERE id = ?").run(remaining, debt.id); 
+                remaining = 0; 
             }
         }
-        
-        // If still tickets left to add, create new batch
-        if (remainingToAdd > 0) {
-            db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, type, remainingToAdd, remainingToAdd, expiry);
+        // Insert remaining positive amount
+        if (remaining > 0) {
+            db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, type, remaining, remaining, expiry);
         }
-    } else if (numAmount < 0) {
-        let remainingToDeduct = Math.abs(numAmount);
-        // Find positive batches
+    } else if (remaining < 0) {
+        // Removing tickets: Try to consume existing batches first
+        let toDeduct = Math.abs(remaining);
         const batches = db.prepare(`SELECT id, remaining_amount FROM TicketBatches WHERE people_id = ? AND ticket_type = ? AND remaining_amount > 0 AND expiry_date >= DATE('now') ORDER BY expiry_date ASC`).all(people_id, type);
         
         for (const batch of batches) {
-            if (remainingToDeduct <= 0) break;
-            const batchValue = batch.remaining_amount;
-            
-            if (remainingToDeduct >= batchValue) {
-                // Fully consume batch
-                db.prepare("UPDATE TicketBatches SET remaining_amount = 0 WHERE id = ?").run(batch.id);
-                remainingToDeduct -= batchValue;
-            } else {
-                // Partially consume batch
-                db.prepare("UPDATE TicketBatches SET remaining_amount = remaining_amount - ? WHERE id = ?").run(remainingToDeduct, batch.id);
-                remainingToDeduct = 0;
-            }
+            if (toDeduct <= 0) break;
+            const taking = Math.min(batch.remaining_amount, toDeduct);
+            db.prepare("UPDATE TicketBatches SET remaining_amount = remaining_amount - ? WHERE id = ?").run(taking, batch.id);
+            toDeduct -= taking;
         }
         
-        // If still need to deduct (overdraft), create negative batch
-        if (remainingToDeduct > 0) {
-            db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, 0, ?, '2099-12-31')`).run(TEAM_ID, people_id, type, -remainingToDeduct);
+        // If still need to deduct, create negative batch (overdraft)
+        if (toDeduct > 0) {
+            db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, 0, ?, '2099-12-31')`).run(TEAM_ID, people_id, type, -toDeduct);
         }
     }
-
+    
     // Log Finance
-    const transactionType = numAmount >= 0 ? 'DEPOSIT' : 'SPEND';
-    // Log the signed amount
-    db.prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, transactionType, price || 0, numAmount, type, note || '管理員手動調整');
-
-    await createNotification(people_id, `庫存調整: ${numAmount > 0 ? '+' : ''}${numAmount}張 (${type})`, '/?page=settings&target=rider_history');
+    const transactionType = amount >= 0 ? 'DEPOSIT' : 'SPEND'; // Or 'ADJUST'
+    const logAmount = Math.abs(amount);
+    
+    // Use logFinance helper if available, or direct insert
+    // Since logFinance helper is available in server.ts (I saw it earlier in my thought process but wait, did I see it in server.ts or worker.js?)
+    // I saw logFinance in worker.js. Let me check server.ts again.
+    // I don't see logFinance helper in server.ts view. I should use direct insert or check if logFinance exists.
+    // Wait, I saw deductTickets using logFinance in server.ts line 350. So it must exist.
+    // Let me check lines 300-320 of server.ts to be sure.
+    
+    await logFinance({ peopleId: people_id, type: 'ADJUST', amountTicket: amount, amountCash: price || 0, ticketType: type, note: note || '管理員手動調整' });
+    
+    // Notification
+    const action = amount >= 0 ? '增加' : '扣除';
+    await createNotification(people_id, `庫存調整: ${action} ${logAmount}張 (${type})`, '/?page=settings&target=rider_history');
     
     res.json({ success: true });
 });

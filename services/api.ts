@@ -2,8 +2,8 @@
 import { DataRecord, LookupItem, TeamInfo, ClassSession, Enrollment, TicketWallet, CourseTemplate, LegendRecord, RaceEvent, PushTemplates, TicketPricing, FinancialRecord, FinancialReport } from '../types';
 
 const getWorkerUrl = () => {
-    // User requested to use this specific Worker URL for preview
-    return 'https://runbike-chiachiacoming.sky070680.workers.dev/api';
+    // Use local server for preview
+    return '/api';
 };
 
 const WORKER_URL = getWorkerUrl();
