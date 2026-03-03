@@ -38,11 +38,37 @@ const App: React.FC = () => {
   
   // Course System Status
   const [courseSystemEnabled, setCourseSystemEnabled] = useState(true);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   // Deep Linking States
   const [jumpDate, setJumpDate] = useState<string | null>(null); // For Training
   const [targetRaceId, setTargetRaceId] = useState<string | number | null>(null); // For Races
   const [settingsTarget, setSettingsTarget] = useState<string | null>(null); // For Settings (New)
+
+  // Offline Detection & Sync
+  useEffect(() => {
+      const handleOnline = () => {
+          setIsOffline(false);
+          api.syncHistoricalData();
+      };
+      const handleOffline = () => setIsOffline(true);
+
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+
+      // Initial sync if online
+      if (navigator.onLine) {
+          // Delay slightly to allow initial load to prioritize
+          setTimeout(() => {
+              api.syncHistoricalData();
+          }, 5000);
+      }
+
+      return () => {
+          window.removeEventListener('online', handleOnline);
+          window.removeEventListener('offline', handleOffline);
+      };
+  }, []);
 
   // 1. Silent Push Sync on App Load
   useEffect(() => {
@@ -389,6 +415,7 @@ const App: React.FC = () => {
       title="嘉嘉來了"
       subtitle="Chia Chia Coming!"
       courseSystemEnabled={courseSystemEnabled}
+      isOffline={isOffline}
     >
       {renderPage()}
       

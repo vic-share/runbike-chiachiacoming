@@ -286,6 +286,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const [cropAspect, setCropAspect] = useState(1);
   const [uploadTarget, setUploadTarget] = useState<'s' | 'b' | null>(null);
   const [confirmModal, setConfirmModal] = useState<{show: boolean, title: string, message: string, onConfirm: () => void} | null>(null);
+  const [successModal, setSuccessModal] = useState<{show: boolean, title: string, message: string} | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [pushPermission, setPushPermission] = useState<NotificationPermission>('default');
   const [financialReport, setFinancialReport] = useState<FinancialReport | null>(null);
@@ -651,8 +652,12 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
           const totalPrice = unitPrice * Number(formData.amount); 
           await api.requestTicketPurchase(user.id, formData.type, Number(formData.amount), last5, totalPrice); 
           if (paymentMethod === 'TRANSFER') localStorage.setItem('CHIACHIA_LAST5', last5); 
-          alert('已送出購買請求，請等待教練確認。'); 
           setShowModal(false); 
+          setSuccessModal({
+              show: true,
+              title: '購買請求已送出',
+              message: '請等待教練確認您的款項，確認後票卷將自動入帳。'
+          });
       } catch (e) { 
           alert('送出失敗，請稍後再試'); 
       } finally { 
@@ -1248,6 +1253,26 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                       document.body
                   )}
                   
+                  {/* SUCCESS MODAL */}
+                  {successModal && successModal.show && createPortal(
+                      <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in">
+                          <div className="glass-card w-full max-w-xs rounded-3xl p-8 border-chiachia-green/20 text-center animate-scale-in flex flex-col items-center gap-4 shadow-[0_0_30px_rgba(57,231,95,0.1)]">
+                              <div className="w-16 h-16 rounded-full bg-zinc-900 border border-chiachia-green/30 flex items-center justify-center text-chiachia-green shadow-glow-green mb-2">
+                                  <Check size={32} strokeWidth={3} />
+                              </div>
+                              <div>
+                                  <h3 className="text-xl font-black text-white italic mb-2">{successModal.title}</h3>
+                                  <p className="text-zinc-400 text-sm font-bold leading-relaxed">{successModal.message}</p>
+                              </div>
+                              <button onClick={() => setSuccessModal(null)} className="w-full py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all mt-4">
+                                  我知道了
+                              </button>
+                          </div>
+                      </div>,
+                      document.body
+                  )}
+
+
                   {/* REJECT MODAL */}
                   {rejectModal.show && createPortal(
                       <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">

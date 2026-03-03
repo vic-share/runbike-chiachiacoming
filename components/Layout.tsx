@@ -1,7 +1,6 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { LayoutDashboard, Trophy, Settings as SettingsIcon, ContactRound, CalendarDays, BookOpen, Zap, Bell, X, Check, ExternalLink, CheckCheck } from 'lucide-react';
+import { LayoutDashboard, Trophy, Settings as SettingsIcon, ContactRound, CalendarDays, BookOpen, Zap, Bell, X, Check, ExternalLink, CheckCheck, WifiOff } from 'lucide-react';
 import { api } from '../services/api';
 import { hasPermission, PERMISSIONS } from '../utils/auth';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -14,9 +13,10 @@ interface LayoutProps {
   title?: string;
   subtitle?: string;
   courseSystemEnabled?: boolean;
+  isOffline?: boolean;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, title = "Chia Chia Coming!", subtitle, courseSystemEnabled = true }) => {
+const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, title = "Chia Chia Coming!", subtitle, courseSystemEnabled = true, isOffline = false }) => {
   const [user, setUser] = useState(api.getUser());
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -273,6 +273,12 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, titl
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 w-full bg-black border-t border-white/10 shadow-[0_-15px_30px_rgba(0,0,0,0.8)] z-[10000]" style={{ paddingBottom: 'max(0px, calc(env(safe-area-inset-bottom) - 6px))' }}>
+        {isOffline && (
+            <div className="absolute top-0 left-0 right-0 -translate-y-full bg-rose-600 text-white text-[10px] font-bold py-1 flex items-center justify-center gap-2 shadow-lg">
+                <WifiOff size={12} />
+                <span>離線模式 (Offline Mode) - 顯示快取資料</span>
+            </div>
+        )}
         <div className="max-w-md mx-auto w-full">
           <div className={`grid ${showCoursesNav ? 'grid-cols-5' : 'grid-cols-4'} items-center px-2 h-[60px]`}>
             <NavButton active={currentPage === 'dashboard'} onClick={() => onNavigate('dashboard')} icon={<LayoutDashboard />} label="總覽" />

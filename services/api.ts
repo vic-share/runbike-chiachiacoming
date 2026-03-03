@@ -1,5 +1,7 @@
 
 import { DataRecord, LookupItem, TeamInfo, ClassSession, Enrollment, TicketWallet, CourseTemplate, LegendRecord, RaceEvent, PushTemplates, TicketPricing, FinancialRecord, FinancialReport } from '../types';
+import { offlineService } from './offline';
+import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 
 const getWorkerUrl = () => {
     // Use user's worker URL
@@ -103,37 +105,55 @@ export const api = {
   },
 
   fetchRaceEvents: async (): Promise<RaceEvent[]> => {
-      return await safeFetchJson('/race-events');
+      try {
+          const data = await safeFetchJson('/race-events');
+          offlineService.save('race-events', data);
+          return data;
+      } catch (e) {
+          const cached = await offlineService.get('race-events');
+          if (cached) return cached;
+          throw e;
+      }
   },
 
   fetchAppData: async () => {
      const t = Date.now();
-     const [records, events, types, series, people, legends, forecast] = await Promise.all([
-         safeFetchJson(`/training-records?t=${t}`).catch(() => []),
-         safeFetchJson(`/race-events?t=${t}`).catch(() => []),
-         safeFetchJson(`/training-types?t=${t}`).catch(() => []),
-         safeFetchJson(`/race-series?t=${t}`).catch(() => []),
-         safeFetchJson(`/people?t=${t}`).catch(() => []),
-         safeFetchJson(`/overview/legends?t=${t}`).catch(() => []),
-         safeFetchJson(`/overview/forecast?t=${t}`).catch(() => [])
-     ]);
+     try {
+         const [records, events, types, series, people, legends, forecast] = await Promise.all([
+             safeFetchJson(`/training-records?t=${t}`).catch(() => []),
+             safeFetchJson(`/race-events?t=${t}`).catch(() => []),
+             safeFetchJson(`/training-types?t=${t}`).catch(() => []),
+             safeFetchJson(`/race-series?t=${t}`).catch(() => []),
+             safeFetchJson(`/people?t=${t}`).catch(() => []),
+             safeFetchJson(`/overview/legends?t=${t}`).catch(() => []),
+             safeFetchJson(`/overview/forecast?t=${t}`).catch(() => [])
+         ]);
 
-     const mappedRecords = Array.isArray(records) ? records.map((r: any) => ({
-         ...r,
-         item: 'training',
-         value: r.score || r.value,
-     })) : [];
+         const mappedRecords = Array.isArray(records) ? records.map((r: any) => ({
+             ...r,
+             item: 'training',
+             value: r.score || r.value,
+         })) : [];
 
-     return {
-         records: mappedRecords,
-         trainingTypes: Array.isArray(types) ? types.map(mapTrainingType) : [],
-         races: Array.isArray(series) ? series.map(mapRaceSeries) : [],
-         people: (Array.isArray(people) ? people : []).map(mapPerson),
-         teamInfo: null,
-         raceEvents: events,
-         legends: Array.isArray(legends) ? legends : [],
-         forecast: Array.isArray(forecast) ? forecast : []
-     };
+         const result = {
+             records: mappedRecords,
+             trainingTypes: Array.isArray(types) ? types.map(mapTrainingType) : [],
+             races: Array.isArray(series) ? series.map(mapRaceSeries) : [],
+             people: (Array.isArray(people) ? people : []).map(mapPerson),
+             teamInfo: null,
+             raceEvents: events,
+             legends: Array.isArray(legends) ? legends : [],
+             forecast: Array.isArray(forecast) ? forecast : []
+         };
+
+         offlineService.save('app-data', result);
+         return result;
+     } catch (e) {
+         console.warn('Fetch app data failed, trying cache...', e);
+         const cached = await offlineService.get('app-data');
+         if (cached) return cached;
+         throw e; // Or return empty structure
+     }
   },
 
   manageRaceEvent: async (action: 'create' | 'delete', data: any) => {
@@ -182,7 +202,17 @@ export const api = {
       if (start) params.append('start', start);
       if (end) params.append('end', end);
       const qs = params.toString() ? `?${params.toString()}` : '';
-      return await safeFetchJson(`/courses/weekly${qs}`);
+      const key = `courses-${start || 'default'}-${end || 'default'}`;
+
+      try {
+          const data = await safeFetchJson(`/courses/weekly${qs}`);
+          offlineService.save(key, data);
+          return data;
+      } catch (e) {
+          const cached = await offlineService.get(key);
+          if (cached) return cached;
+          throw e;
+      }
   },
   
   joinCourse: async (sessionId: string|number, peopleId: string|number) => {
@@ -226,11 +256,27 @@ export const api = {
   },
 
   fetchWallets: async (): Promise<TicketWallet[]> => {
-    return await safeFetchJson(`/tickets/wallets?t=${Date.now()}`);
+    try {
+        const data = await safeFetchJson(`/tickets/wallets?t=${Date.now()}`);
+        offlineService.save('wallets', data);
+        return data;
+    } catch (e) {
+        const cached = await offlineService.get('wallets');
+        if (cached) return cached;
+        throw e;
+    }
   },
 
   fetchCourseTemplates: async (): Promise<CourseTemplate[]> => {
-    return await safeFetchJson(`/courses/templates?t=${Date.now()}`);
+    try {
+        const data = await safeFetchJson(`/courses/templates?t=${Date.now()}`);
+        offlineService.save('course-templates', data);
+        return data;
+    } catch (e) {
+        const cached = await offlineService.get('course-templates');
+        if (cached) return cached;
+        throw e;
+    }
   },
 
   manageLookup: async (table: string, name: string, id: any, is_default: boolean, is_hidden: boolean, extras: any) => {
@@ -271,7 +317,15 @@ export const api = {
   },
 
   fetchTicketRequests: async () => {
-      return await safeFetchJson(`/tickets/requests?t=${Date.now()}`);
+      try {
+          const data = await safeFetchJson(`/tickets/requests?t=${Date.now()}`);
+          offlineService.save('ticket-requests', data);
+          return data;
+      } catch (e) {
+          const cached = await offlineService.get('ticket-requests');
+          if (cached) return cached;
+          throw e;
+      }
   },
 
   // Updated to accept reason and approved flag
@@ -344,7 +398,15 @@ export const api = {
   },
 
   fetchCourseSystemStatus: async (): Promise<{enabled: boolean}> => {
-      return await safeFetchJson('/settings/course-system');
+      try {
+          const data = await safeFetchJson('/settings/course-system');
+          offlineService.save('course-system-status', data);
+          return data;
+      } catch (e) {
+          const cached = await offlineService.get('course-system-status');
+          if (cached) return cached;
+          throw e;
+      }
   },
 
   toggleCourseSystem: async (enabled: boolean) => {
@@ -355,7 +417,15 @@ export const api = {
   },
 
   fetchTicketPricing: async (): Promise<TicketPricing> => {
-      return await safeFetchJson('/settings/ticket-pricing');
+      try {
+          const data = await safeFetchJson('/settings/ticket-pricing');
+          offlineService.save('ticket-pricing', data);
+          return data;
+      } catch (e) {
+          const cached = await offlineService.get('ticket-pricing');
+          if (cached) return cached;
+          throw e;
+      }
   },
 
   saveTicketPricing: async (data: TicketPricing) => {
@@ -369,12 +439,30 @@ export const api = {
       let qs = `?t=${Date.now()}`;
       if (month) qs += `&month=${month}`;
       if (year) qs += `&year=${year}`;
-      return await safeFetchJson(`/finance/report${qs}`);
+      const key = `financial-report-${month || 'default'}-${year || 'default'}`;
+      try {
+          const data = await safeFetchJson(`/finance/report${qs}`);
+          offlineService.save(key, data);
+          return data;
+      } catch (e) {
+          const cached = await offlineService.get(key);
+          if (cached) return cached;
+          throw e;
+      }
   },
 
   fetchFinancialHistory: async (peopleId?: string|number): Promise<FinancialRecord[]> => {
       const qs = peopleId ? `?people_id=${peopleId}&t=${Date.now()}` : `?t=${Date.now()}`;
-      return await safeFetchJson(`/finance/history${qs}`);
+      const key = `financial-history-${peopleId || 'all'}`;
+      try {
+          const data = await safeFetchJson(`/finance/history${qs}`);
+          offlineService.save(key, data);
+          return data;
+      } catch (e) {
+          const cached = await offlineService.get(key);
+          if (cached) return cached;
+          throw e;
+      }
   },
 
   fetchUnreadCount: async (userId: string|number): Promise<{count: number}> => {
@@ -400,7 +488,15 @@ export const api = {
   },
 
   fetchBankAccount: async () => {
-      return await safeFetchJson('/settings/bank-account');
+      try {
+          const data = await safeFetchJson('/settings/bank-account');
+          offlineService.save('bank-account', data);
+          return data;
+      } catch (e) {
+          const cached = await offlineService.get('bank-account');
+          if (cached) return cached;
+          throw e;
+      }
   },
 
   // [NEW] Manual Add Tickets (Admin)
@@ -423,5 +519,35 @@ export const api = {
           method: 'POST',
           body: JSON.stringify(data)
       });
+  },
+
+  // [NEW] Sync Historical Data (1 Year)
+  syncHistoricalData: async () => {
+      console.log('[Sync] Starting background sync for historical data...');
+      const now = new Date();
+      // Sync past 12 months of courses
+      for (let i = 1; i <= 12; i++) {
+          const d = subMonths(now, i);
+          const start = format(startOfMonth(d), 'yyyy-MM-dd');
+          const end = format(endOfMonth(d), 'yyyy-MM-dd');
+          try {
+              await api.fetchWeeklyCourses(start, end);
+              // Small delay to avoid hammering the server
+              await new Promise(r => setTimeout(r, 500));
+          } catch (e) {
+              console.warn(`[Sync] Failed to sync courses for ${start}`, e);
+          }
+      }
+
+      // Sync financial history for current user if logged in
+      const user = api.getUser();
+      if (user && user.id) {
+          try {
+              await api.fetchFinancialHistory(user.id);
+          } catch (e) {
+              console.warn(`[Sync] Failed to sync financial history`, e);
+          }
+      }
+      console.log('[Sync] Historical data sync completed');
   }
 };
