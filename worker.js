@@ -302,6 +302,8 @@ export default {
       try { await getDB().prepare("ALTER TABLE TrainingRecords ADD COLUMN created_at TIMESTAMP").run(); } catch (e) {}
       try { await getDB().prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_training_client_id ON TrainingRecords(client_id)").run(); } catch (e) {}
       try { await getDB().prepare("ALTER TABLE SystemNotifications ADD COLUMN team_id INTEGER DEFAULT 1").run(); } catch (e) {}
+      try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_sessions_date ON ClassSessions(date)").run(); } catch (e) {}
+      try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_enrollments_session_id ON Enrollments(session_id)").run(); } catch (e) {}
 
       // Fix ClassSessions schema if ticket_type is INTEGER (causing FK issues)
       try {
@@ -824,11 +826,43 @@ export default {
            query += ` ORDER BY date ASC, start_time ASC`;
 
            const { results: sessions } = await getDB().prepare(query).bind(...params).all();
-           const enhanced = await Promise.all(sessions.map(async s => {
-               const count = await getDB().prepare("SELECT COUNT(*) as c FROM Enrollments E JOIN People P ON E.people_id = P.id WHERE E.session_id = ? AND E.status != 'CANCELLED' AND P.team_id = ?").bind(s.id, TEAM_ID).first();
-               const { results: students } = await getDB().prepare(`SELECT E.people_id as id, P.name, P.avatar_url as s_url, P.roles, E.status, E.note FROM Enrollments E JOIN People P ON E.people_id = P.id WHERE E.session_id = ? AND P.team_id = ?`).bind(s.id, TEAM_ID).all();
-               return { ...s, enrolled_count: count.c, students: students.map(st => ({...st, roles: JSON.parse(st.roles || '[]')})), capacity: s.max_students || 20, category: s.template_id ? (s.category || 'ROUTINE') : 'SPECIAL', ticket_type: s.ticket_type || 'REGULAR', price: s.price || 0, note: s.note || '' };
-           }));
+           
+           if (sessions.length === 0) {
+               return Response.json([], { headers: corsHeaders });
+           }
+
+           const sessionIds = sessions.map(s => s.id);
+           const { results: allEnrollments } = await getDB().prepare(`
+               SELECT E.session_id, E.people_id as id, P.name, P.avatar_url as s_url, P.roles, E.status, E.note 
+               FROM Enrollments E 
+               JOIN People P ON E.people_id = P.id 
+               WHERE E.session_id IN (${sessionIds.join(',')}) AND P.team_id = ${TEAM_ID}
+           `).all();
+
+           const enrollmentsMap = {};
+           allEnrollments.forEach(e => {
+               if (!enrollmentsMap[e.session_id]) enrollmentsMap[e.session_id] = [];
+               enrollmentsMap[e.session_id].push({
+                   ...e,
+                   roles: JSON.parse(e.roles || '[]')
+               });
+           });
+
+           const enhanced = sessions.map(s => {
+               const students = enrollmentsMap[s.id] || [];
+               const enrolledCount = students.filter(st => st.status !== 'CANCELLED').length;
+               return { 
+                   ...s, 
+                   enrolled_count: enrolledCount, 
+                   students: students, 
+                   capacity: s.max_students || 20, 
+                   category: s.template_id ? (s.category || 'ROUTINE') : 'SPECIAL', 
+                   ticket_type: s.ticket_type || 'REGULAR', 
+                   price: s.price || 0, 
+                   note: s.note || '' 
+               };
+           });
+           
            return Response.json(enhanced, { headers: corsHeaders });
       }
       if (path === "/api/courses/templates") {
