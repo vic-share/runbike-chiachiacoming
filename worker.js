@@ -304,6 +304,7 @@ export default {
       try { await getDB().prepare("ALTER TABLE SystemNotifications ADD COLUMN team_id INTEGER DEFAULT 1").run(); } catch (e) {}
       try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_sessions_date ON ClassSessions(date)").run(); } catch (e) {}
       try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_enrollments_session_id ON Enrollments(session_id)").run(); } catch (e) {}
+      try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON SystemNotifications(user_id, team_id, is_read)").run(); } catch (e) {}
 
       // Fix ClassSessions schema if ticket_type is INTEGER (causing FK issues)
       try {
