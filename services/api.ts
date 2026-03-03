@@ -274,10 +274,13 @@ export const api = {
       return await safeFetchJson(`/tickets/requests?t=${Date.now()}`);
   },
 
-  // Updated to accept reason
-  deleteTicketRequest: async (id: any, reason?: string) => {
-      const qs = reason ? `&reason=${encodeURIComponent(reason)}` : '';
-      return await safeFetchJson(`/tickets/requests?id=${id}${qs}`, { method: 'DELETE' });
+  // Updated to accept reason and approved flag
+  deleteTicketRequest: async (id: any, reason?: string, approved?: boolean) => {
+      const params = new URLSearchParams();
+      params.append('id', String(id));
+      if (reason) params.append('reason', reason);
+      if (approved) params.append('approved', 'true');
+      return await safeFetchJson(`/tickets/requests?${params.toString()}`, { method: 'DELETE' });
   },
 
   saveTemplate: async (payload: any) => {

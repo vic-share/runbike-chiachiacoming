@@ -606,14 +606,17 @@ export default {
               await getDB().prepare("UPDATE RaceEvents SET name = ?, date = ?, location = ?, series_id = ?, public_url = ? WHERE id = ? AND team_id = ?").bind(name, date, location || '', series_id || null, eventUrl || null, id, TEAM_ID).run();
           } else {
               await getDB().prepare("INSERT INTO RaceEvents (team_id, name, date, location, series_id, public_url) VALUES (?, ?, ?, ?, ?, ?)").bind(TEAM_ID, name, date, location || '', series_id || null, eventUrl || null).run();
-              const templates = (await env.RUNBIKE_KV.get("PUSH_TEMPLATES", { type: "json" })) || {};
-              if (templates.is_enabled !== false) {
-                  const title = templates.new_race_title || "🏆 新增賽事公告";
-                  const bodyTpl = templates.new_race_body || "新增賽事：{name}，日期 {date}";
-                  const body = bodyTpl.replace(/{name}/g, name).replace(/{date}/g, date);
-                  await sendPushToRole(env, 'all', title, body, '/?page=races');
-                  await createNotificationForRole(getDB(), 'all', title, '/?page=races');
-              }
+              
+              ctx.waitUntil((async () => {
+                  const templates = (await env.RUNBIKE_KV.get("PUSH_TEMPLATES", { type: "json" })) || {};
+                  if (templates.is_enabled !== false) {
+                      const title = templates.new_race_title || "🏆 新增賽事公告";
+                      const bodyTpl = templates.new_race_body || "新增賽事：{name}，日期 {date}";
+                      const body = bodyTpl.replace(/{name}/g, name).replace(/{date}/g, date);
+                      await sendPushToRole(env, 'all', title, body, '/?page=races');
+                      await createNotificationForRole(getDB(), 'all', title, '/?page=races');
+                  }
+              })());
           }
           return Response.json({ success: true }, { headers: corsHeaders });
       }
@@ -624,13 +627,20 @@ export default {
           
           if (!id) { 
               const res = await getDB().prepare(`INSERT INTO ClassSessions (team_id, template_id, date, start_time, end_time, name, location, max_students, ticket_type, status, category, price, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)`).bind(TEAM_ID, template_id || null, date, start_time, end_time, name, location || '', max_students || capacity || 20, ticket_type || 'NONE', finalCategory, price || 0, note || '').run();
+              
+              // Keep synchronous for UI consistency
               await enrollDefaultStudents(getDB(), res.meta.last_row_id, template_id);
-              if (finalCategory === 'ROUTINE') {
-                  const title = "🆕 新課程開放報名";
-                  const body = `新增課程：${name} (${date})，快去報名吧！`;
-                  await sendPushToRole(env, 'all', title, body, '/?page=courses');
-                  await createNotificationForRole(getDB(), 'all', title, '/?page=courses');
-              }
+              
+              // Use waitUntil for background tasks
+              ctx.waitUntil((async () => {
+                  if (finalCategory === 'ROUTINE') {
+                      const title = "🆕 新課程開放報名";
+                      const body = `新增課程：${name} (${date})，快去報名吧！`;
+                      await sendPushToRole(env, 'all', title, body, '/?page=courses');
+                      await createNotificationForRole(getDB(), 'all', title, '/?page=courses');
+                  }
+              })());
+              
               return Response.json({ success: true, id: res.meta.last_row_id }, { headers: corsHeaders });
           }
           await getDB().prepare(`UPDATE ClassSessions SET date=?, start_time=?, end_time=?, name=?, location=?, max_students=?, ticket_type=?, price=?, category=?, note=? WHERE id=? AND team_id=?`).bind(date, start_time, end_time, name, location || '', max_students || capacity || 20, ticket_type || 'NONE', price || 0, finalCategory, note || '', id, TEAM_ID).run();
@@ -662,32 +672,39 @@ export default {
               }
           }
 
-          const templates = (await env.RUNBIKE_KV.get("PUSH_TEMPLATES", { type: "json" })) || {};
-          let title = "", bodyTpl = "";
-          if (status === 'CONFIRMED') {
-              title = templates.course_open_title || "✅ 確認開課通知";
-              bodyTpl = templates.course_open_body || "課程 {name} 已確認開課，請準時出席！";
-          } else if (status === 'CANCELLED') {
-              title = templates.course_cancelled_title || "🚫 停課通知";
-              bodyTpl = templates.course_cancelled_body || "課程 {name} 已取消，請確認行程。";
-          }
+          // Use waitUntil for background tasks (Notifications)
+          ctx.waitUntil((async () => {
+              const templates = (await env.RUNBIKE_KV.get("PUSH_TEMPLATES", { type: "json" })) || {};
+              let title = "", bodyTpl = "";
+              if (status === 'CONFIRMED') {
+                  title = templates.course_open_title || "✅ 確認開課通知";
+                  bodyTpl = templates.course_open_body || "課程 {name} 已確認開課，請準時出席！";
+              } else if (status === 'CANCELLED') {
+                  title = templates.course_cancelled_title || "🚫 停課通知";
+                  bodyTpl = templates.course_cancelled_body || "課程 {name} 已取消，請確認行程。";
+              }
 
-          if (title) {
-              const body = bodyTpl.replace(/{name}/g, session.name).replace(/{date}/g, session.date);
-              await sendPushToParticipants(env, session_id, 'course', title, body, '/?page=courses');
-          }
+              if (title) {
+                  const body = bodyTpl.replace(/{name}/g, session.name).replace(/{date}/g, session.date);
+                  await sendPushToParticipants(env, session_id, 'course', title, body, '/?page=courses');
+              }
+          })());
+
           return Response.json({ success: true }, { headers: corsHeaders });
       }
 
       if (path === "/api/tickets/purchase" && method === "POST") {
           const { people_id, type, amount, last_5_digits, total_price } = await request.json();
           await getDB().prepare(`INSERT INTO TicketRequests (team_id, people_id, type, amount, last_5_digits, total_price) VALUES (?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, type, amount, last_5_digits, total_price || 0).run();
-          const person = await getDB().prepare("SELECT name FROM People WHERE id = ?").bind(people_id).first();
           
-          const title = "💰 選手儲值公告";
-          const body = `選手 ${person?.name} 欲購買 ${amount} 張票卷 (${last_5_digits})。請至後台確認。`;
-          await sendPushToRole(env, 'COACH', title, body, '/?page=settings&target=coach_requests');
-          await createNotificationForRole(getDB(), 'COACH', `購票申請: ${person?.name}`, '/?page=settings&target=coach_requests');
+          ctx.waitUntil((async () => {
+              const person = await getDB().prepare("SELECT name FROM People WHERE id = ?").bind(people_id).first();
+              const title = "💰 選手儲值公告";
+              const body = `選手 ${person?.name} 欲購買 ${amount} 張票卷 (${last_5_digits})。請至後台確認。`;
+              await sendPushToRole(env, 'COACH', title, body, '/?page=settings&target=coach_requests');
+              await createNotificationForRole(getDB(), 'COACH', `購票申請: ${person?.name}`, '/?page=settings&target=coach_requests');
+          })());
+          
           return Response.json({ success: true }, { headers: corsHeaders });
       }
 
@@ -710,10 +727,12 @@ export default {
           }
           await logFinance(getDB(), { peopleId: people_id, type: 'DEPOSIT', amountTicket: amount, amountCash: price_paid || 0, ticketType: type, note: note || '手動儲值' });
 
-          const title = "✅ 儲值狀態：成功";
-          const body = `您的 ${amount} 張票卷已入帳！`;
-          await sendPushToUser(env, people_id, title, body, '/?page=settings&target=rider_history');
-          await createNotification(getDB(), people_id, title, '/?page=settings&target=rider_history');
+          ctx.waitUntil((async () => {
+              const title = "✅ 儲值狀態：成功";
+              const body = `您的 ${amount} 張票卷已入帳！`;
+              await sendPushToUser(env, people_id, title, body, '/?page=settings&target=rider_history');
+              await createNotification(getDB(), people_id, title, '/?page=settings&target=rider_history');
+          })());
 
           return Response.json({ success: true }, { headers: corsHeaders });
       }
@@ -721,53 +740,17 @@ export default {
       if (path === "/api/tickets/manual-add" && method === "POST") {
           const { people_id, type, amount, expiry_date, price, note } = await request.json();
           const expiry = expiry_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0];
-          const numAmount = Number(amount);
+          
+          await getDB().prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, type, amount, amount, expiry).run();
+          
+          const transactionType = amount >= 0 ? 'DEPOSIT' : 'SPEND';
+          const logAmount = Math.abs(amount);
+          
+          await getDB().prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, transactionType, price || 0, logAmount, type, note || '管理員手動調整').run();
 
-          if (numAmount > 0) {
-              let remainingToAdd = numAmount;
-              const { results: debts } = await getDB().prepare(`SELECT id, remaining_amount FROM TicketBatches WHERE people_id = ? AND ticket_type = ? AND remaining_amount < 0 ORDER BY expiry_date ASC`).bind(people_id, type).all();
-              
-              for (const debt of debts) {
-                  if (remainingToAdd <= 0) break;
-                  const debtValue = Math.abs(debt.remaining_amount);
-                  if (remainingToAdd >= debtValue) {
-                      await getDB().prepare("DELETE FROM TicketBatches WHERE id = ?").bind(debt.id).run();
-                      remainingToAdd -= debtValue;
-                  } else {
-                      await getDB().prepare("UPDATE TicketBatches SET remaining_amount = remaining_amount + ? WHERE id = ?").bind(remainingToAdd, debt.id).run();
-                      remainingToAdd = 0;
-                  }
-              }
-              
-              if (remainingToAdd > 0) {
-                  await getDB().prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, type, remainingToAdd, remainingToAdd, expiry).run();
-              }
-          } else if (numAmount < 0) {
-              let remainingToDeduct = Math.abs(numAmount);
-              const { results: batches } = await getDB().prepare(`SELECT id, remaining_amount FROM TicketBatches WHERE people_id = ? AND ticket_type = ? AND remaining_amount > 0 AND expiry_date >= DATE('now') ORDER BY expiry_date ASC`).bind(people_id, type).all();
-              
-              for (const batch of batches) {
-                  if (remainingToDeduct <= 0) break;
-                  const batchValue = batch.remaining_amount;
-                  
-                  if (remainingToDeduct >= batchValue) {
-                      await getDB().prepare("UPDATE TicketBatches SET remaining_amount = 0 WHERE id = ?").bind(batch.id).run();
-                      remainingToDeduct -= batchValue;
-                  } else {
-                      await getDB().prepare("UPDATE TicketBatches SET remaining_amount = remaining_amount - ? WHERE id = ?").bind(remainingToDeduct, batch.id).run();
-                      remainingToDeduct = 0;
-                  }
-              }
-              
-              if (remainingToDeduct > 0) {
-                  await getDB().prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, 0, ?, '2099-12-31')`).bind(TEAM_ID, people_id, type, -remainingToDeduct).run();
-              }
-          }
-
-          const transactionType = numAmount >= 0 ? 'DEPOSIT' : 'SPEND';
-          await getDB().prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, transactionType, price || 0, numAmount, type, note || '管理員手動調整').run();
-
-          await createNotification(getDB(), people_id, `庫存調整: ${numAmount > 0 ? '+' : ''}${numAmount}張 (${type})`, '/?page=settings&target=rider_history');
+          ctx.waitUntil((async () => {
+              await createNotification(getDB(), people_id, `庫存調整: ${amount > 0 ? '+' : ''}${amount}張 (${type})`, '/?page=settings&target=rider_history');
+          })());
           
           return Response.json({ success: true }, { headers: corsHeaders });
       }
@@ -775,17 +758,20 @@ export default {
       if (path === "/api/tickets/requests" && method === "DELETE") {
           const id = url.searchParams.get('id');
           const reason = url.searchParams.get('reason') || ''; 
+          const approved = url.searchParams.get('approved') === 'true';
           
           const req = await getDB().prepare("SELECT * FROM TicketRequests WHERE id = ?").bind(id).first();
           await getDB().prepare("DELETE FROM TicketRequests WHERE id = ?").bind(id).run();
           
-          if (req) {
+          if (req && !approved) {
               await getDB().prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, 'REJECTED', 0, ?, ?, ?)`).bind(TEAM_ID, req.people_id, req.amount, req.type, `申請被拒: ${reason || '無原因'}`).run();
 
-              const title = "❌ 儲值申請未通過";
-              const body = reason ? `您的儲值申請已被退回，原因：${reason}` : "您的儲值申請已被取消，請聯繫教練。";
-              await sendPushToUser(env, req.people_id, title, body, '/?page=settings&target=rider_history');
-              await createNotification(getDB(), req.people_id, title, '/?page=settings&target=rider_history');
+              ctx.waitUntil((async () => {
+                  const title = "❌ 儲值申請未通過";
+                  const body = reason ? `您的儲值申請已被退回，原因：${reason}` : "您的儲值申請已被取消，請聯繫教練。";
+                  await sendPushToUser(env, req.people_id, title, body, '/?page=settings&target=rider_history');
+                  await createNotification(getDB(), req.people_id, title, '/?page=settings&target=rider_history');
+              })());
           }
           return Response.json({ success: true }, { headers: corsHeaders });
       }
