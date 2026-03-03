@@ -421,6 +421,12 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
     }
   }, [historyFilter, modalType, user]);
 
+  useEffect(() => {
+    if (modalType === 'my_tickets') {
+      loadWallets();
+    }
+  }, [modalType]);
+
   const loadPushTemplates = async () => {
       const t = await api.fetchPushTemplates();
       setPushTemplates({
