@@ -640,7 +640,18 @@ app.post('/api/race-events', async (req, res) => {
         db.prepare("UPDATE RaceEvents SET name = ?, date = ?, location = ?, series_id = ?, public_url = ? WHERE id = ? AND team_id = ?").run(name, date, location || '', series_id || null, eventUrl || null, id, TEAM_ID);
     } else {
         db.prepare("INSERT INTO RaceEvents (team_id, name, date, location, series_id, public_url) VALUES (?, ?, ?, ?, ?, ?)").run(TEAM_ID, name, date, location || '', series_id || null, eventUrl || null);
-        // Push notification logic...
+        
+        // Async Notification
+        (async () => {
+            const templates = await KV.get("PUSH_TEMPLATES") || {};
+            if (templates.is_enabled !== false) {
+                const title = templates.new_race_title || "🏆 新增賽事公告";
+                const bodyTpl = templates.new_race_body || "新增賽事：{name}，日期 {date}";
+                const body = bodyTpl.replace(/{name}/g, name).replace(/{date}/g, date);
+                await sendPushToRole('all', title, body, '/?page=races');
+                await createNotificationForRole('all', title, '/?page=races');
+            }
+        })().catch(e => console.error("Async Notification Error:", e));
     }
     res.json({ success: true });
 });
@@ -770,11 +781,23 @@ app.post('/api/courses/sessions', async (req, res) => {
     const finalCategory = category || (template_id ? 'ROUTINE' : 'SPECIAL');
     
     if (!id) { 
-        const result = db.prepare(`INSERT INTO ClassSessions (team_id, template_id, date, start_time, end_time, name, location, max_students, ticket_type, status, category, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)`).run(TEAM_ID, template_id || null, date, start_time, end_time, name, location || '', max_students || capacity || 20, ticket_type || 'NONE', finalCategory, price || 0);
+        const result = db.prepare(`INSERT INTO ClassSessions (team_id, template_id, date, start_time, end_time, name, location, max_students, ticket_type, status, category, price, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)`).run(TEAM_ID, template_id || null, date, start_time, end_time, name, location || '', max_students || capacity || 20, ticket_type || 'NONE', finalCategory, price || 0, note || '');
+        
         await enrollDefaultStudents(result.lastInsertRowid, template_id);
+
+        // Async Notification
+        (async () => {
+            if (finalCategory === 'ROUTINE') {
+                const title = "🆕 新課程開放報名";
+                const body = `新增課程：${name} (${date})，快去報名吧！`;
+                await sendPushToRole('all', title, body, '/?page=courses');
+                await createNotificationForRole('all', title, '/?page=courses');
+            }
+        })().catch(e => console.error("Async Notification Error:", e));
+
         res.json({ success: true, id: result.lastInsertRowid });
     } else {
-        db.prepare(`UPDATE ClassSessions SET date=?, start_time=?, end_time=?, name=?, location=?, max_students=?, ticket_type=?, price=?, category=? WHERE id=? AND team_id=?`).run(date, start_time, end_time, name, location || '', max_students || capacity || 20, ticket_type || 'NONE', price || 0, finalCategory, id, TEAM_ID);
+        db.prepare(`UPDATE ClassSessions SET date=?, start_time=?, end_time=?, name=?, location=?, max_students=?, ticket_type=?, price=?, category=?, note=? WHERE id=? AND team_id=?`).run(date, start_time, end_time, name, location || '', max_students || capacity || 20, ticket_type || 'NONE', price || 0, finalCategory, note || '', id, TEAM_ID);
         res.json({ success: true, id });
     }
 });
@@ -801,6 +824,25 @@ app.post('/api/courses/session-status', async (req, res) => {
             for (const p of enrollments) await refundTickets(p.people_id, session.ticket_type, 1, '課程取消');
         }
     }
+
+    // Async Notification
+    (async () => {
+        const templates = await KV.get("PUSH_TEMPLATES") || {};
+        let title = "", bodyTpl = "";
+        if (status === 'CONFIRMED') {
+            title = templates.course_open_title || "✅ 確認開課通知";
+            bodyTpl = templates.course_open_body || "課程 {name} 已確認開課，請準時出席！";
+        } else if (status === 'CANCELLED') {
+            title = templates.course_cancelled_title || "🚫 停課通知";
+            bodyTpl = templates.course_cancelled_body || "課程 {name} 已取消，請確認行程。";
+        }
+
+        if (title) {
+            const body = bodyTpl.replace(/{name}/g, session.name).replace(/{date}/g, session.date);
+            await sendPushToParticipants(session_id, 'course', title, body, '/?page=courses');
+        }
+    })().catch(e => console.error("Async Notification Error:", e));
+
     res.json({ success: true });
 });
 
@@ -878,8 +920,14 @@ app.post('/api/tickets/purchase', async (req, res) => {
     const { people_id, type, amount, last_5_digits, total_price } = req.body;
     db.prepare(`INSERT INTO TicketRequests (team_id, people_id, type, amount, last_5_digits, total_price) VALUES (?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, type, amount, last_5_digits, total_price || 0);
     
-    const person = db.prepare("SELECT name FROM People WHERE id = ?").get(people_id);
-    await createNotificationForRole('COACH', `購票申請: ${person?.name}`, '/?page=settings&target=coach_requests');
+    // Async Notification
+    (async () => {
+        const person = db.prepare("SELECT name FROM People WHERE id = ?").get(people_id);
+        const title = "💰 選手儲值公告";
+        const body = `選手 ${person?.name} 欲購買 ${amount} 張票卷 (${last_5_digits})。請至後台確認。`;
+        await sendPushToRole('COACH', title, body, '/?page=settings&target=coach_requests');
+        await createNotificationForRole('COACH', `購票申請: ${person?.name}`, '/?page=settings&target=coach_requests');
+    })().catch(e => console.error("Async Notification Error:", e));
     
     res.json({ success: true });
 });
@@ -907,7 +955,15 @@ app.post('/api/tickets/add', async (req, res) => {
         db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, type, remainingToAdd, remainingToAdd, expiry);
     }
     await logFinance({ peopleId: people_id, type: 'DEPOSIT', amountTicket: amount, amountCash: price_paid || 0, ticketType: type, note: note || '手動儲值' });
-    await createNotification(people_id, `儲值通知: ${amount}張 (${type})`, '/?page=settings&target=rider_history');
+    
+    // Async Notification
+    (async () => {
+        const title = "✅ 儲值狀態：成功";
+        const body = `您的 ${amount} 張票卷已入帳！`;
+        await sendPushToUser(people_id, title, body, '/?page=settings&target=rider_history');
+        await createNotification(people_id, title, '/?page=settings&target=rider_history');
+    })().catch(e => console.error("Async Notification Error:", e));
+
     res.json({ success: true });
 });
 
@@ -966,9 +1022,11 @@ app.post('/api/tickets/manual-add', async (req, res) => {
     
     await logFinance({ peopleId: people_id, type: 'ADJUST', amountTicket: amount, amountCash: price || 0, ticketType: type, note: note || '管理員手動調整' });
     
-    // Notification
-    const action = amount >= 0 ? '增加' : '扣除';
-    await createNotification(people_id, `庫存調整: ${action} ${logAmount}張 (${type})`, '/?page=settings&target=rider_history');
+    // Async Notification
+    (async () => {
+        const action = amount >= 0 ? '增加' : '扣除';
+        await createNotification(people_id, `庫存調整: ${action} ${Math.abs(amount)}張 (${type})`, '/?page=settings&target=rider_history');
+    })().catch(e => console.error("Async Notification Error:", e));
     
     res.json({ success: true });
 });
@@ -981,11 +1039,21 @@ app.get('/api/tickets/requests', (req, res) => {
 app.delete('/api/tickets/requests', async (req, res) => {
     const id = req.query.id;
     const reason = req.query.reason || '';
+    const approved = req.query.approved === 'true';
+
     const reqData = db.prepare("SELECT * FROM TicketRequests WHERE id = ?").get(id);
     db.prepare("DELETE FROM TicketRequests WHERE id = ?").run(id);
-    if (reqData) {
+    
+    if (reqData && !approved) {
         db.prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, 'REJECTED', 0, ?, ?, ?)`).run(TEAM_ID, reqData.people_id, reqData.amount, reqData.type, `申請被拒: ${reason || '無原因'}`);
-        await createNotification(reqData.people_id, `購票申請被拒: ${reason || '無原因'}`, '/?page=settings&target=rider_history');
+        
+        // Async Notification
+        (async () => {
+            const title = "❌ 儲值申請未通過";
+            const body = reason ? `您的儲值申請已被退回，原因：${reason}` : "您的儲值申請已被取消，請聯繫教練。";
+            await sendPushToUser(reqData.people_id, title, body, '/?page=settings&target=rider_history');
+            await createNotification(reqData.people_id, title, '/?page=settings&target=rider_history');
+        })().catch(e => console.error("Async Notification Error:", e));
     }
     res.json({ success: true });
 });
