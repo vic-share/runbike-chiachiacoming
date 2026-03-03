@@ -301,6 +301,7 @@ export default {
       try { await getDB().prepare("ALTER TABLE TrainingRecords ADD COLUMN client_id TEXT").run(); } catch (e) {}
       try { await getDB().prepare("ALTER TABLE TrainingRecords ADD COLUMN created_at TIMESTAMP").run(); } catch (e) {}
       try { await getDB().prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_training_client_id ON TrainingRecords(client_id)").run(); } catch (e) {}
+      try { await getDB().prepare("ALTER TABLE SystemNotifications ADD COLUMN team_id INTEGER DEFAULT 1").run(); } catch (e) {}
 
       // Fix ClassSessions schema if ticket_type is INTEGER (causing FK issues)
       try {
@@ -386,10 +387,14 @@ export default {
 
       // --- Notification APIs ---
       if (path === "/api/notifications/unread-count") {
-          const userId = url.searchParams.get('user_id');
-          if (!userId) return Response.json({ count: 0 }, { headers: corsHeaders });
-          const result = await getDB().prepare("SELECT COUNT(*) as count FROM SystemNotifications WHERE user_id = ? AND is_read = 0 AND team_id = ?").bind(userId, TEAM_ID).first();
-          return Response.json(result || { count: 0 }, { headers: corsHeaders });
+          try {
+              const userId = url.searchParams.get('user_id');
+              if (!userId) return Response.json({ count: 0 }, { headers: corsHeaders });
+              const result = await getDB().prepare("SELECT COUNT(*) as count FROM SystemNotifications WHERE user_id = ? AND is_read = 0 AND team_id = ?").bind(userId, TEAM_ID).first();
+              return Response.json(result || { count: 0 }, { headers: corsHeaders });
+          } catch (e) {
+              return Response.json({ count: 0, error: e.message }, { headers: corsHeaders });
+          }
       }
       if (path === "/api/notifications") {
           const userId = url.searchParams.get('user_id');
@@ -716,15 +721,53 @@ export default {
       if (path === "/api/tickets/manual-add" && method === "POST") {
           const { people_id, type, amount, expiry_date, price, note } = await request.json();
           const expiry = expiry_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0];
-          
-          await getDB().prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, type, amount, amount, expiry).run();
-          
-          const transactionType = amount >= 0 ? 'DEPOSIT' : 'SPEND';
-          const logAmount = Math.abs(amount);
-          
-          await getDB().prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, transactionType, price || 0, logAmount, type, note || '管理員手動調整').run();
+          const numAmount = Number(amount);
 
-          await createNotification(getDB(), people_id, `庫存調整: ${amount > 0 ? '+' : ''}${amount}張 (${type})`, '/?page=settings&target=rider_history');
+          if (numAmount > 0) {
+              let remainingToAdd = numAmount;
+              const { results: debts } = await getDB().prepare(`SELECT id, remaining_amount FROM TicketBatches WHERE people_id = ? AND ticket_type = ? AND remaining_amount < 0 ORDER BY expiry_date ASC`).bind(people_id, type).all();
+              
+              for (const debt of debts) {
+                  if (remainingToAdd <= 0) break;
+                  const debtValue = Math.abs(debt.remaining_amount);
+                  if (remainingToAdd >= debtValue) {
+                      await getDB().prepare("DELETE FROM TicketBatches WHERE id = ?").bind(debt.id).run();
+                      remainingToAdd -= debtValue;
+                  } else {
+                      await getDB().prepare("UPDATE TicketBatches SET remaining_amount = remaining_amount + ? WHERE id = ?").bind(remainingToAdd, debt.id).run();
+                      remainingToAdd = 0;
+                  }
+              }
+              
+              if (remainingToAdd > 0) {
+                  await getDB().prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, type, remainingToAdd, remainingToAdd, expiry).run();
+              }
+          } else if (numAmount < 0) {
+              let remainingToDeduct = Math.abs(numAmount);
+              const { results: batches } = await getDB().prepare(`SELECT id, remaining_amount FROM TicketBatches WHERE people_id = ? AND ticket_type = ? AND remaining_amount > 0 AND expiry_date >= DATE('now') ORDER BY expiry_date ASC`).bind(people_id, type).all();
+              
+              for (const batch of batches) {
+                  if (remainingToDeduct <= 0) break;
+                  const batchValue = batch.remaining_amount;
+                  
+                  if (remainingToDeduct >= batchValue) {
+                      await getDB().prepare("UPDATE TicketBatches SET remaining_amount = 0 WHERE id = ?").bind(batch.id).run();
+                      remainingToDeduct -= batchValue;
+                  } else {
+                      await getDB().prepare("UPDATE TicketBatches SET remaining_amount = remaining_amount - ? WHERE id = ?").bind(remainingToDeduct, batch.id).run();
+                      remainingToDeduct = 0;
+                  }
+              }
+              
+              if (remainingToDeduct > 0) {
+                  await getDB().prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, 0, ?, '2099-12-31')`).bind(TEAM_ID, people_id, type, -remainingToDeduct).run();
+              }
+          }
+
+          const transactionType = numAmount >= 0 ? 'DEPOSIT' : 'SPEND';
+          await getDB().prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(TEAM_ID, people_id, transactionType, price || 0, numAmount, type, note || '管理員手動調整').run();
+
+          await createNotification(getDB(), people_id, `庫存調整: ${numAmount > 0 ? '+' : ''}${numAmount}張 (${type})`, '/?page=settings&target=rider_history');
           
           return Response.json({ success: true }, { headers: corsHeaders });
       }

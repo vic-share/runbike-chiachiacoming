@@ -160,6 +160,9 @@ function initDB() {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     `);
+
+    // Migrations
+    try { db.prepare("ALTER TABLE SystemNotifications ADD COLUMN team_id INTEGER DEFAULT 1").run(); } catch (e) {}
 }
 
 initDB();
@@ -411,10 +414,14 @@ app.post('/api/people', (req, res) => {
 });
 
 app.get('/api/notifications/unread-count', (req, res) => {
-    const userId = req.query.user_id;
-    if (!userId) return res.json({ count: 0 });
-    const result = db.prepare("SELECT COUNT(*) as count FROM SystemNotifications WHERE user_id = ? AND is_read = 0 AND team_id = ?").get(userId, TEAM_ID);
-    res.json(result || { count: 0 });
+    try {
+        const userId = req.query.user_id;
+        if (!userId) return res.json({ count: 0 });
+        const result = db.prepare("SELECT COUNT(*) as count FROM SystemNotifications WHERE user_id = ? AND is_read = 0 AND team_id = ?").get(userId, TEAM_ID);
+        res.json(result || { count: 0 });
+    } catch (e) {
+        res.json({ count: 0, error: e.message });
+    }
 });
 
 app.get('/api/notifications', (req, res) => {
@@ -884,17 +891,63 @@ app.post('/api/tickets/add', async (req, res) => {
 app.post('/api/tickets/manual-add', async (req, res) => {
     const { people_id, type, amount, expiry_date, price, note } = req.body;
     const expiry = expiry_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0];
+    const numAmount = Number(amount);
     
-    // Add to TicketBatches
-    db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, type, amount, amount, expiry);
-    
-    // Log Finance (DEPOSIT if amount > 0, SPEND if amount < 0)
-    const transactionType = amount >= 0 ? 'DEPOSIT' : 'SPEND';
-    const logAmount = Math.abs(amount);
-    
-    db.prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, transactionType, price || 0, logAmount, type, note || '管理員手動調整');
+    if (numAmount > 0) {
+        let remainingToAdd = numAmount;
+        // Find debts (negative remaining_amount)
+        const debts = db.prepare(`SELECT id, remaining_amount FROM TicketBatches WHERE people_id = ? AND ticket_type = ? AND remaining_amount < 0 ORDER BY expiry_date ASC`).all(people_id, type);
+        
+        for (const debt of debts) {
+            if (remainingToAdd <= 0) break;
+            const debtValue = Math.abs(debt.remaining_amount);
+            if (remainingToAdd >= debtValue) {
+                // Fully pay off debt
+                db.prepare("DELETE FROM TicketBatches WHERE id = ?").run(debt.id);
+                remainingToAdd -= debtValue;
+            } else {
+                // Partially pay off debt
+                db.prepare("UPDATE TicketBatches SET remaining_amount = remaining_amount + ? WHERE id = ?").run(remainingToAdd, debt.id);
+                remainingToAdd = 0;
+            }
+        }
+        
+        // If still tickets left to add, create new batch
+        if (remainingToAdd > 0) {
+            db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, type, remainingToAdd, remainingToAdd, expiry);
+        }
+    } else if (numAmount < 0) {
+        let remainingToDeduct = Math.abs(numAmount);
+        // Find positive batches
+        const batches = db.prepare(`SELECT id, remaining_amount FROM TicketBatches WHERE people_id = ? AND ticket_type = ? AND remaining_amount > 0 AND expiry_date >= DATE('now') ORDER BY expiry_date ASC`).all(people_id, type);
+        
+        for (const batch of batches) {
+            if (remainingToDeduct <= 0) break;
+            const batchValue = batch.remaining_amount;
+            
+            if (remainingToDeduct >= batchValue) {
+                // Fully consume batch
+                db.prepare("UPDATE TicketBatches SET remaining_amount = 0 WHERE id = ?").run(batch.id);
+                remainingToDeduct -= batchValue;
+            } else {
+                // Partially consume batch
+                db.prepare("UPDATE TicketBatches SET remaining_amount = remaining_amount - ? WHERE id = ?").run(remainingToDeduct, batch.id);
+                remainingToDeduct = 0;
+            }
+        }
+        
+        // If still need to deduct (overdraft), create negative batch
+        if (remainingToDeduct > 0) {
+            db.prepare(`INSERT INTO TicketBatches (team_id, people_id, ticket_type, initial_amount, remaining_amount, expiry_date) VALUES (?, ?, ?, 0, ?, '2099-12-31')`).run(TEAM_ID, people_id, type, -remainingToDeduct);
+        }
+    }
 
-    await createNotification(people_id, `庫存調整: ${amount > 0 ? '+' : ''}${amount}張 (${type})`, '/?page=settings&target=rider_history');
+    // Log Finance
+    const transactionType = numAmount >= 0 ? 'DEPOSIT' : 'SPEND';
+    // Log the signed amount
+    db.prepare(`INSERT INTO FinancialRecords (team_id, people_id, transaction_type, amount_cash, amount_ticket, ticket_type, note) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(TEAM_ID, people_id, transactionType, price || 0, numAmount, type, note || '管理員手動調整');
+
+    await createNotification(people_id, `庫存調整: ${numAmount > 0 ? '+' : ''}${numAmount}張 (${type})`, '/?page=settings&target=rider_history');
     
     res.json({ success: true });
 });
