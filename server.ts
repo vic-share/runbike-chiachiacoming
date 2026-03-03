@@ -777,7 +777,7 @@ app.get('/api/courses/weekly', (req, res) => {
 });
 
 app.post('/api/courses/sessions', async (req, res) => {
-    const { id, date, start_time, end_time, name, location, capacity, max_students, category, ticket_type, template_id, price } = req.body;
+    const { id, date, start_time, end_time, name, location, capacity, max_students, category, ticket_type, template_id, price, note } = req.body;
     const finalCategory = category || (template_id ? 'ROUTINE' : 'SPECIAL');
     
     if (!id) { 
