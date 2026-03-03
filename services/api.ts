@@ -387,7 +387,15 @@ export const api = {
   },
 
   fetchPushTemplates: async (): Promise<PushTemplates> => {
-      return await safeFetchJson('/settings/push-templates');
+      try {
+          const data = await safeFetchJson('/settings/push-templates');
+          offlineService.save('push-templates', data);
+          return data;
+      } catch (e) {
+          const cached = await offlineService.get('push-templates');
+          if (cached) return cached;
+          throw e;
+      }
   },
 
   savePushTemplates: async (data: PushTemplates) => {
