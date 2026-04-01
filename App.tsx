@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -58,10 +57,21 @@ const App: React.FC = () => {
 
       // Initial sync if online
       if (navigator.onLine) {
-          // Delay slightly to allow initial load to prioritize
-          setTimeout(() => {
-              api.syncHistoricalData();
-          }, 5000);
+          const runBackgroundSync = () => {
+              if ('requestIdleCallback' in window) {
+                  window.requestIdleCallback(() => {
+                      console.log("[System] 主執行緒閒置，開始同步歷史資料...");
+                      api.syncHistoricalData();
+                  }, { timeout: 10000 });
+              } else {
+                  // Fallback for older browsers
+                  setTimeout(() => {
+                      console.log("[System] 使用備用 setTimeout 同步歷史資料...");
+                      api.syncHistoricalData();
+                  }, 3000); 
+              }
+          };
+          runBackgroundSync();
       }
 
       return () => {
@@ -109,7 +119,15 @@ const App: React.FC = () => {
               console.warn('[Push] Silent sync failed', e);
           }
       };
-      setTimeout(syncPush, 5000);
+
+      if ('requestIdleCallback' in window) {
+          window.requestIdleCallback(() => {
+              console.log("[System] 主執行緒閒置，開始同步推播狀態...");
+              syncPush();
+          }, { timeout: 10000 });
+      } else {
+          setTimeout(syncPush, 5000);
+      }
   }, []);
 
   // [NEW] Handle URL Query Params for Deep Linking
