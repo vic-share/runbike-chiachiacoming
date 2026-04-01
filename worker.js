@@ -607,7 +607,7 @@ export default {
               query += ` AND people_id = ?`;
               params.push(pid);
           }
-          query += ` ORDER BY created_at DESC LIMIT 100`;
+          query += ` ORDER BY created_at DESC LIMIT 500`;
           const { results } = await getDB().prepare(query).bind(...params).all();
           return Response.json(results, { headers: corsHeaders });
       }
@@ -986,7 +986,7 @@ export default {
 
       if (path === "/api/training-records") {
           if (method === "GET") { 
-              const { results } = await getDB().prepare(`SELECT R.id, R.date, R.people_id, R.training_type_id, R.score as value, R.note, T.type_name as name, P.name as person_name, R.created_at, R.client_id FROM TrainingRecords R JOIN TrainingTypes T ON R.training_type_id = T.id JOIN People P ON R.people_id = P.id WHERE R.team_id = ${TEAM_ID} ORDER BY R.date DESC, R.created_at DESC, R.id DESC LIMIT 300`).all(); 
+              const { results } = await getDB().prepare(`SELECT R.id, R.date, R.people_id, R.training_type_id, R.score as value, R.note, T.type_name as name, P.name as person_name, R.created_at, R.client_id FROM TrainingRecords R JOIN TrainingTypes T ON R.training_type_id = T.id JOIN People P ON R.people_id = P.id WHERE R.team_id = ${TEAM_ID} ORDER BY R.date DESC, R.created_at DESC, R.id DESC LIMIT 5000`).all(); 
               return Response.json(results, { headers: corsHeaders }); 
           }
           if (method === "POST") {
