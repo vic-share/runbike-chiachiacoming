@@ -143,6 +143,13 @@ export const SimpleComposedChart: React.FC<SimpleComposedChartProps> = ({
             {showXAxis && (
                 <div className="flex justify-between text-[9px] text-zinc-500 mt-2 font-mono">
                     {(() => {
+                        if (xKey === 'name') {
+                            return data.map((d, i) => (
+                                <span key={i} className="text-center truncate" style={{ width: `${100 / data.length}%` }}>
+                                    {formatX(d[xKey])}
+                                </span>
+                            ));
+                        }                    
                         const maxLabels = 5;
                         let indices = Array.from({ length: Math.min(maxLabels, data.length) }, (_, i) => 
                             Math.floor(i * (data.length - 1) / (Math.min(maxLabels, data.length) - 1))
