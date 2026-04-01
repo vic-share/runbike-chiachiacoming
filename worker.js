@@ -65,11 +65,33 @@ async function sendPushToParticipants(env, entityId, type, title, body, url = "/
 
     // Deduplicate
     const uniqueIds = [...new Set(peopleIds)];
+    const dbStatements = [];
     for (const pid of uniqueIds) {
-        await sendPushToUser(env, pid, title, body, url);
-        await createNotification(getDB(), pid, title, url);
+        dbStatements.push(
+            getDB().prepare(
+                `INSERT INTO SystemNotifications (team_id, user_id, title, action_link) VALUES (1, ?, ?, ?)`
+            ).bind(pid, title, url)
+        );
     }
-}
+
+    // 2. 一次性送出所有資料庫寫入請求 (使用 D1 batch 加速)
+    if (dbStatements.length > 0) {
+        try {
+            await getDB().batch(dbStatements);
+        } catch (dbError) {
+            console.error("[DB Batch Error] 通知寫入失敗:", dbError);
+        }
+    }
+
+    // 3. 並行發送 Web Push 推播 (取代原本的 await sendPushToUser)
+    const pushPromises = uniqueIds.map(pid => 
+        sendPushToUser(env, pid, title, body, url).catch(err => {
+            console.error(`[Push Error] 發送給 User ${pid} 失敗:`, err);
+        })
+    );
+
+    await Promise.all(pushPromises);
+    }
 
 // Helper to create DB notification
 async function createNotification(db, userId, title, actionLink) {
@@ -295,49 +317,49 @@ export default {
 
     try {
       // Lazy Init
-      await getDB().prepare(`CREATE TABLE IF NOT EXISTS FinancialRecords (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER DEFAULT 1, people_id INTEGER, transaction_type TEXT, amount_cash INTEGER DEFAULT 0, amount_ticket INTEGER DEFAULT 0, ticket_type TEXT, note TEXT, related_session_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run();
-      await getDB().prepare(`CREATE TABLE IF NOT EXISTS SystemNotifications (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER DEFAULT 1, user_id INTEGER, title TEXT, action_link TEXT, is_read BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run();
-      try { await getDB().prepare("ALTER TABLE ClassSessions ADD COLUMN note TEXT").run(); } catch (e) {}
-      try { await getDB().prepare("ALTER TABLE TrainingRecords ADD COLUMN client_id TEXT").run(); } catch (e) {}
-      try { await getDB().prepare("ALTER TABLE TrainingRecords ADD COLUMN created_at TIMESTAMP").run(); } catch (e) {}
-      try { await getDB().prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_training_client_id ON TrainingRecords(client_id)").run(); } catch (e) {}
-      try { await getDB().prepare("ALTER TABLE SystemNotifications ADD COLUMN team_id INTEGER DEFAULT 1").run(); } catch (e) {}
-      try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_sessions_date ON ClassSessions(date)").run(); } catch (e) {}
-      try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_enrollments_session_id ON Enrollments(session_id)").run(); } catch (e) {}
-      try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON SystemNotifications(user_id, team_id, is_read)").run(); } catch (e) {}
+    //   await getDB().prepare(`CREATE TABLE IF NOT EXISTS FinancialRecords (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER DEFAULT 1, people_id INTEGER, transaction_type TEXT, amount_cash INTEGER DEFAULT 0, amount_ticket INTEGER DEFAULT 0, ticket_type TEXT, note TEXT, related_session_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run();
+    //   await getDB().prepare(`CREATE TABLE IF NOT EXISTS SystemNotifications (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER DEFAULT 1, user_id INTEGER, title TEXT, action_link TEXT, is_read BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run();
+    //   try { await getDB().prepare("ALTER TABLE ClassSessions ADD COLUMN note TEXT").run(); } catch (e) {}
+    //   try { await getDB().prepare("ALTER TABLE TrainingRecords ADD COLUMN client_id TEXT").run(); } catch (e) {}
+    //   try { await getDB().prepare("ALTER TABLE TrainingRecords ADD COLUMN created_at TIMESTAMP").run(); } catch (e) {}
+    //   try { await getDB().prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_training_client_id ON TrainingRecords(client_id)").run(); } catch (e) {}
+    //   try { await getDB().prepare("ALTER TABLE SystemNotifications ADD COLUMN team_id INTEGER DEFAULT 1").run(); } catch (e) {}
+    //   try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_sessions_date ON ClassSessions(date)").run(); } catch (e) {}
+    //   try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_enrollments_session_id ON Enrollments(session_id)").run(); } catch (e) {}
+    //   try { await getDB().prepare("CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON SystemNotifications(user_id, team_id, is_read)").run(); } catch (e) {}
 
       // Fix ClassSessions schema if ticket_type is INTEGER (causing FK issues)
-      try {
-          const info = await getDB().prepare("PRAGMA table_info(ClassSessions)").all();
-          const ticketTypeCol = info.results.find(c => c.name === 'ticket_type');
-          if (ticketTypeCol && ticketTypeCol.type === 'INTEGER') {
-              console.log("Migrating ClassSessions schema...");
-              await getDB().batch([
-                  getDB().prepare("ALTER TABLE ClassSessions RENAME TO ClassSessions_old"),
-                  getDB().prepare(`CREATE TABLE ClassSessions (
-                      id INTEGER PRIMARY KEY AUTOINCREMENT,
-                      template_id INTEGER,
-                      date DATE NOT NULL,
-                      name TEXT NOT NULL,
-                      start_time TEXT,
-                      end_time TEXT,
-                      location TEXT,
-                      status TEXT DEFAULT 'OPEN',
-                      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                      max_students INTEGER DEFAULT 0,
-                      team_id INTEGER,
-                      ticket_type TEXT,
-                      price INTEGER DEFAULT 0,
-                      category TEXT DEFAULT 'ROUTINE',
-                      note TEXT
-                  )`),
-                  getDB().prepare("INSERT INTO ClassSessions (id, template_id, date, name, start_time, end_time, location, status, created_at, max_students, team_id, ticket_type, price, category, note) SELECT id, template_id, date, name, start_time, end_time, location, status, created_at, max_students, team_id, CAST(ticket_type AS TEXT), price, category, note FROM ClassSessions_old"),
-                  getDB().prepare("DROP TABLE ClassSessions_old")
-              ]);
-          }
-      } catch (e) {
-          console.error("ClassSessions migration error:", e);
-      }
+    //   try {
+    //       const info = await getDB().prepare("PRAGMA table_info(ClassSessions)").all();
+    //       const ticketTypeCol = info.results.find(c => c.name === 'ticket_type');
+    //       if (ticketTypeCol && ticketTypeCol.type === 'INTEGER') {
+    //           console.log("Migrating ClassSessions schema...");
+    //           await getDB().batch([
+    //               getDB().prepare("ALTER TABLE ClassSessions RENAME TO ClassSessions_old"),
+    //               getDB().prepare(`CREATE TABLE ClassSessions (
+    //                   id INTEGER PRIMARY KEY AUTOINCREMENT,
+    //                   template_id INTEGER,
+    //                   date DATE NOT NULL,
+    //                   name TEXT NOT NULL,
+    //                   start_time TEXT,
+    //                   end_time TEXT,
+    //                   location TEXT,
+    //                   status TEXT DEFAULT 'OPEN',
+    //                   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    //                   max_students INTEGER DEFAULT 0,
+    //                   team_id INTEGER,
+    //                   ticket_type TEXT,
+    //                   price INTEGER DEFAULT 0,
+    //                   category TEXT DEFAULT 'ROUTINE',
+    //                   note TEXT
+    //               )`),
+    //               getDB().prepare("INSERT INTO ClassSessions (id, template_id, date, name, start_time, end_time, location, status, created_at, max_students, team_id, ticket_type, price, category, note) SELECT id, template_id, date, name, start_time, end_time, location, status, created_at, max_students, team_id, CAST(ticket_type AS TEXT), price, category, note FROM ClassSessions_old"),
+    //               getDB().prepare("DROP TABLE ClassSessions_old")
+    //           ]);
+    //       }
+    //   } catch (e) {
+    //       console.error("ClassSessions migration error:", e);
+    //   }
 
       if (path === "/api/env.js") {
         const script = `window.ENV = window.ENV || {}; window.ENV.VITE_SUPABASE_URL = "${env.VITE_SUPABASE_URL || ''}"; window.ENV.VITE_SUPABASE_ANON_KEY = "${env.VITE_SUPABASE_ANON_KEY || ''}"; window.ENV.VAPID_PUBLIC_KEY = "${env.VAPID_PUBLIC_KEY || 'BAcjQfCcruqwU6OicgOJh66UR6125vX_rcsk-G_ddnQYdwI2XJK0jKYNF1IckZdqDfu7DvOOaVUFHd-PigfJ2jw'}";`;
