@@ -32,7 +32,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const [submitting, setSubmitting] = useState(false);
   const [localLastValue, setLocalLastValue] = useState<string | null>(null);
   const [localCountOffset, setLocalCountOffset] = useState(0);
-  const lastSavedClientId = useRef<string | null>(null);
   
   const { saveRecord } = useTrainingSync();
   
@@ -80,7 +79,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }
   }, [filteredPeople]);
 
-  // 【修復點 1】 將初始化邏輯與樂觀狀態清除邏輯分開
+  // 將初始化邏輯與樂觀狀態清除邏輯分開
   useEffect(() => {
       if (trainingTypes.length > 0 && !selectedType) {
           setSelectedType(trainingTypes[0].id);
@@ -96,11 +95,10 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }
   }, [trainingTypes, activePersonId, filteredPeople]);
 
-  // 【修復點 2】 確保本地樂觀更新只在切換人員或切換訓練類型時才重置
+  // 確保本地樂觀更新只在切換人員或切換訓練類型時才重置
   useEffect(() => {
       setLocalLastValue(null);
       setLocalCountOffset(0);
-      lastSavedClientId.current = null;
   }, [currentRiderId, activePersonId, selectedType]);
 
   const activeRider = useMemo(() => {
@@ -248,7 +246,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
 
   const todayCount = todaySessionRecords.length;
 
-  // 【新功能】計算當前訓練項目下，每位選手今日的 Total
+  // 計算當前訓練項目下，每位選手今日的 Total (基底真實數據)
   const todayCountsByRider = useMemo(() => {
       const counts: Record<string, number> = {};
       const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -262,6 +260,30 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       });
       return counts;
   }, [data, selectedType]);
+
+  // 【新增】數學對帳法：利用 Ref 追蹤前一次的真實次數，解決錯誤累加問題
+  const prevTodayCountsRef = useRef<Record<string, number>>(todayCountsByRider);
+
+  useEffect(() => {
+      if (!currentRiderId) return;
+
+      const currentBaseCount = todayCountsByRider[currentRiderId] || 0;
+      const prevBaseCount = prevTodayCountsRef.current[currentRiderId] || 0;
+
+      // 如果真實數據的次數增加了（代表 refreshData 抓到新資料了）
+      if (currentBaseCount > prevBaseCount) {
+          const diff = currentBaseCount - prevBaseCount;
+          // 把樂觀更新的次數扣除對應的增長量（最低扣到 0）
+          setLocalCountOffset(prev => {
+              const next = Math.max(0, prev - diff);
+              if (next === 0) setLocalLastValue(null); // 完全同步後清除 PREV 預覽
+              return next;
+          });
+      }
+
+      // 更新紀錄
+      prevTodayCountsRef.current = todayCountsByRider;
+  }, [todayCountsByRider, currentRiderId]);
 
   const sortedPeople = useMemo(() => {
       return filteredPeople
@@ -296,18 +318,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       setInputValue(prev => prev + digit);
   };
 
-  // 對帳：確保真正的資料回來後，再清掉樂觀狀態
-  useEffect(() => {
-      if (lastSavedClientId.current && sessionRecords.length > 0) {
-          const isSynced = sessionRecords.some((r: any) => r.client_id === lastSavedClientId.current);
-          if (isSynced) {
-              setLocalLastValue(null);
-              setLocalCountOffset(0);
-              lastSavedClientId.current = null;
-          }
-      }
-  }, [sessionRecords]);
-
   const handleRecordSubmit = async () => {
       if (!inputValue || parseFloat(inputValue) <= 0) return;
       const targetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
@@ -325,9 +335,9 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
               training_type_id: typeId 
           };
 
-          const clientId = await saveRecord(recordData);
-          lastSavedClientId.current = clientId;
+          await saveRecord(recordData);
 
+          // 樂觀更新：立刻更新 PREV 和次數
           setLocalLastValue(valStr);
           setLocalCountOffset(prev => prev + 1);
           
@@ -337,7 +347,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
 
           localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now()));
           
-          refreshData();
+          refreshData(); // 觸發後端更新
           setTimeout(() => setFeedbackMsg(null), 1500);
       } catch (e) { 
           alert('紀錄失敗'); 
@@ -578,7 +588,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                                {validRiders.map((p: any) => { 
                                     const pid = String(p.id); 
                                     const isActive = currentRiderId === pid; 
-                                    // 【新功能】取得該選手今日次數，加上樂觀更新邏輯
                                     const baseCount = todayCountsByRider[pid] || 0;
                                     const displayCount = isActive ? baseCount + localCountOffset : baseCount;
 
