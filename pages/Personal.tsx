@@ -55,16 +55,16 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
             
-            <div className="absolute bottom-6 left-6 flex items-end gap-4">
-               <div className="w-24 h-24 rounded-3xl border-2 border-chiachia-green bg-zinc-950 shadow-glow-green overflow-hidden relative">
+            <div className="absolute bottom-6 left-6 flex items-end gap-4 pr-6">
+               <div className="w-24 h-24 rounded-3xl border-2 border-chiachia-green bg-zinc-950 shadow-glow-green overflow-hidden relative shrink-0">
                   {person?.s_url ? (
                     <img src={person.s_url.split('#')[0]} className="w-full h-full object-contain p-1" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-zinc-900 text-zinc-600"><User size={40}/></div>
                   )}
                </div>
-               <div className="pb-1">
-                  <h2 className="text-3xl font-black text-white italic tracking-tight">{person?.full_name || person?.name || '---'}</h2>
+               <div className="pb-1 min-w-0">
+                  <h2 className="text-3xl font-black text-white italic tracking-tight pr-2 truncate">{person?.full_name || person?.name || '---'}</h2>
                   <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{person?.birthday || 'RIDER'}</p>
                </div>
             </div>
