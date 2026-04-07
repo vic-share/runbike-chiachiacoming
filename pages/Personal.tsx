@@ -64,7 +64,7 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
                   )}
                </div>
                <div className="pb-1 min-w-0 flex-1">
-                  <h2 className="text-3xl font-black text-white italic pr-4 truncate"> {/* pr-2 改為 pr-4，移除 tracking-tight */}
+                  <h2 className="text-3xl font-black text-white italic pr-6 truncate"> {/* pr-2 改為 pr-4，移除 tracking-tight */}
                       {person?.full_name || person?.name || '---'}
                    </h2>
                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">
