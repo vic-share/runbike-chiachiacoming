@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../services/api';
@@ -16,7 +15,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       start: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
       end: format(new Date(), 'yyyy-MM-dd')
   });
-  const [isDateMenuOpen, setIsDateMenuOpen] = useState(false); // [NEW] Toggle for date menu
+  const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
 
   const [randomRider, setRandomRider] = useState<any>(null);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
@@ -31,15 +30,15 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const [showBioModal, setShowBioModal] = useState(false); 
   const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, id?: string|number}>({ show: false });
   const [submitting, setSubmitting] = useState(false);
-  const [localLastValue, setLocalLastValue] = useState<string | null>(null); // 本地樂觀最後一筆
-  const [localCountOffset, setLocalCountOffset] = useState(0); // 本地樂觀次數偏移
-  const lastSavedClientId = useRef<string | null>(null); // 紀錄最後一次儲存的 UUID
+  const [localLastValue, setLocalLastValue] = useState<string | null>(null);
+  const [localCountOffset, setLocalCountOffset] = useState(0);
+  const lastSavedClientId = useRef<string | null>(null);
   
   const { saveRecord } = useTrainingSync();
   
   const currentUser = api.getUser();
   const canRecord = currentUser && (hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.AIDE) || hasRole(currentUser, ROLES.DEV));
-    const isAdmin = hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.DEV);
+  const isAdmin = hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.DEV);
 
   const filteredPeople = useMemo(() => {
     return people.filter((p: any) => hasRole(p, ROLES.RIDER) && !hasRole(p, ROLES.DEV));
@@ -48,9 +47,8 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   // Deep Link Handling
   useEffect(() => {
       if (initialExpandedDate) {
-          setDateRange('ALL'); // Ensure the date is visible
+          setDateRange('ALL');
           setExpandedDate(initialExpandedDate);
-          // Auto scroll to date card after render
           setTimeout(() => {
               const el = document.getElementById(`date-card-${initialExpandedDate}`);
               if (el) {
@@ -58,7 +56,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                   el.classList.add('animate-pulse');
                   setTimeout(() => el.classList.remove('animate-pulse'), 1500);
               }
-              // Call the cleanup function provided by parent
               if (onClearJumpDate) {
                   onClearJumpDate();
               }
@@ -83,10 +80,8 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }
   }, [filteredPeople]);
 
+  // 【修復點 1】 將初始化邏輯與樂觀狀態清除邏輯分開
   useEffect(() => {
-      setLocalLastValue(null);
-      setLocalCountOffset(0);
-      lastSavedClientId.current = null;
       if (trainingTypes.length > 0 && !selectedType) {
           setSelectedType(trainingTypes[0].id);
       }
@@ -100,6 +95,13 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
           if (rand) setRandomRider(rand);
       }
   }, [trainingTypes, activePersonId, filteredPeople]);
+
+  // 【修復點 2】 確保本地樂觀更新只在切換人員或切換訓練類型時才重置
+  useEffect(() => {
+      setLocalLastValue(null);
+      setLocalCountOffset(0);
+      lastSavedClientId.current = null;
+  }, [currentRiderId, activePersonId, selectedType]);
 
   const activeRider = useMemo(() => {
       if (!isRecordingMode) {
@@ -246,6 +248,21 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
 
   const todayCount = todaySessionRecords.length;
 
+  // 【新功能】計算當前訓練項目下，每位選手今日的 Total
+  const todayCountsByRider = useMemo(() => {
+      const counts: Record<string, number> = {};
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const typeId = getSelectedTypeId();
+
+      data.forEach((d: any) => {
+          if (d.date === todayStr && String(d.training_type_id) === String(typeId) && d.item === 'training') {
+              const pid = String(d.people_id);
+              counts[pid] = (counts[pid] || 0) + 1;
+          }
+      });
+      return counts;
+  }, [data, selectedType]);
+
   const sortedPeople = useMemo(() => {
       return filteredPeople
         .filter((p: any) => !p.is_hidden)
@@ -278,13 +295,12 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       if (inputValue.includes('.')) { const [_, decimalPart] = inputValue.split('.'); if (decimalPart && decimalPart.length >= 3) return; }
       setInputValue(prev => prev + digit);
   };
-  // 監聽 sessionRecords 變化，進行對帳 (Reconciliation)
+
+  // 對帳：確保真正的資料回來後，再清掉樂觀狀態
   useEffect(() => {
       if (lastSavedClientId.current && sessionRecords.length > 0) {
-          // 檢查伺服器回傳的資料中，是否已經包含我們剛存的那一筆
           const isSynced = sessionRecords.some((r: any) => r.client_id === lastSavedClientId.current);
           if (isSynced) {
-              // 如果伺服器已經有這筆資料了，就重置樂觀更新狀態，避免重複計算
               setLocalLastValue(null);
               setLocalCountOffset(0);
               lastSavedClientId.current = null;
@@ -309,11 +325,9 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
               training_type_id: typeId 
           };
 
-          // 1. 離線優先儲存
           const clientId = await saveRecord(recordData);
           lastSavedClientId.current = clientId;
 
-          // 2. 樂觀更新：立刻更新 PREV 和 TODAY
           setLocalLastValue(valStr);
           setLocalCountOffset(prev => prev + 1);
           
@@ -330,6 +344,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
           setSubmitting(false); 
       }
   };
+
   const handleRiderSelection = (id: string) => {
       if (isRecordingMode) {
           setParticipatingRiderIds(prev => { if (prev.includes(id)) { const next = prev.filter(pid => pid !== id); if (currentRiderId === id) setCurrentRiderId(next.length > 0 ? next[0] : null); return next; } else { const next = [...prev, id]; if (!currentRiderId) setCurrentRiderId(id); return next; } });
@@ -414,14 +429,12 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
            </div>
 
            <div className="px-4 py-4 space-y-4 relative z-10 mt-2">
-               {/* Controls & Charts */}
                <div className="flex justify-between items-center gap-2">
                    <div className="relative flex-1">
                        <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="w-full bg-zinc-900 border border-white/10 text-white text-sm font-black uppercase tracking-wider rounded-xl px-3 py-2 pr-8 outline-none appearance-none h-10"> {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} </select>
                        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"/>
                    </div>
                    
-                   {/* New Collapsible Date Filter */}
                    <div className="relative flex-1 max-w-[160px] z-50">
                        <button 
                            onClick={() => setIsDateMenuOpen(!isDateMenuOpen)}
@@ -436,7 +449,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                            <ChevronDown size={12} className={`shrink-0 transition-transform ${isDateMenuOpen ? 'rotate-180' : ''}`} />
                        </button>
 
-                       {/* Dropdown Menu */}
                        {isDateMenuOpen && (
                            <div className="absolute top-full right-0 mt-2 w-48 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-2 z-[60] flex flex-col gap-1 animate-scale-in origin-top-right">
                                <div className="grid grid-cols-2 gap-1 mb-1">
@@ -539,7 +551,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                <div className="shrink-0 flex flex-col items-center justify-start pb-2 border-b border-white/5 bg-zinc-950 relative z-10">
                    <div className="relative inline-block z-20 mb-1"> <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="appearance-none bg-zinc-900/50 border border-white/10 text-zinc-400 text-sm font-black uppercase tracking-widest py-1.5 pl-3 pr-6 rounded-full outline-none text-center"> {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} </select> <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" size={14} /> </div>
                    
-                   {/* Conditionally hide PREV/TODAY if Custom Date Filter is active (to avoid context confusion) */}
                    {dateRange !== 'PICK' && (
                        <div className="flex items-center gap-4 mb-1"> 
                            {(localLastValue || lastRecordValue) && ( 
@@ -564,7 +575,29 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                            <div className="flex-1 flex items-center justify-center"> <button onClick={() => setShowRiderSelectModal(true)} className="w-32 h-32 rounded-full bg-zinc-900 border border-white/10 flex flex-col items-center justify-center gap-2 active:scale-95 transition-all group hover:border-chiachia-green/50"> <Users size={32} className="text-zinc-500 group-hover:text-chiachia-green transition-colors"/> <span className="text-xs font-black text-zinc-500 uppercase tracking-widest group-hover:text-white transition-colors">Select Rider</span> <div className="w-8 h-8 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green mt-1"> <Plus size={20} strokeWidth={3} /> </div> </button> </div>
                        ) : (
                            <div className="grid grid-cols-4 gap-x-1 gap-y-2 content-start py-2">
-                               {validRiders.map((p: any) => { const pid = String(p.id); const isActive = currentRiderId === pid; return ( <button key={pid} onClick={() => setCurrentRiderId(pid)} className={`relative group transition-all flex flex-col items-center gap-1.5 ${isActive ? 'scale-105 z-10' : 'opacity-60 scale-95'}`}> <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 bg-zinc-900 transition-all relative flex items-center justify-center mx-auto ${isActive ? 'border-chiachia-green shadow-[0_0_15px_rgba(57,231,95,0.6)]' : 'border-zinc-800'}`}> {p.s_url ? ( <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className={`text-xl font-black ${isActive ? 'text-chiachia-green' : 'text-zinc-600'}`}> {p.name?.[0]} </span> )} </div> <span className={`text-[10px] font-black truncate max-w-full px-1 ${isActive ? 'text-chiachia-green' : 'text-zinc-500'}`}> {p.name} </span> </button> ); })}
+                               {validRiders.map((p: any) => { 
+                                    const pid = String(p.id); 
+                                    const isActive = currentRiderId === pid; 
+                                    // 【新功能】取得該選手今日次數，加上樂觀更新邏輯
+                                    const baseCount = todayCountsByRider[pid] || 0;
+                                    const displayCount = isActive ? baseCount + localCountOffset : baseCount;
+
+                                    return ( 
+                                        <button key={pid} onClick={() => setCurrentRiderId(pid)} className={`relative group transition-all flex flex-col items-center gap-1.5 ${isActive ? 'scale-105 z-10' : 'opacity-60 scale-95'}`}> 
+                                            <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 bg-zinc-900 transition-all relative flex items-center justify-center mx-auto ${isActive ? 'border-chiachia-green shadow-[0_0_15px_rgba(57,231,95,0.6)]' : 'border-zinc-800'}`}> 
+                                                {p.s_url ? ( <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className={`text-xl font-black ${isActive ? 'text-chiachia-green' : 'text-zinc-600'}`}> {p.name?.[0]} </span> )} 
+                                            </div> 
+                                            <div className="flex items-center justify-center gap-1 max-w-full px-1">
+                                                <span className={`text-[10px] font-black truncate ${isActive ? 'text-chiachia-green' : 'text-zinc-500'}`}> {p.name} </span> 
+                                                {displayCount > 0 && (
+                                                    <span className={`text-[9px] font-black px-1 rounded shadow-sm ${isActive ? 'bg-chiachia-green text-black' : 'bg-zinc-800 text-zinc-400'}`}>
+                                                        {displayCount}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </button> 
+                                    ); 
+                               })}
                                <button onClick={() => setShowRiderSelectModal(true)} className="relative group transition-all flex flex-col items-center gap-1.5 active:scale-95"> <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-dashed border-zinc-700 bg-zinc-900/50 flex items-center justify-center hover:border-zinc-500 hover:bg-zinc-800 transition-colors mx-auto"> <Plus size={24} className="text-zinc-500 group-hover:text-white transition-colors" strokeWidth={3} /> </div> <span className="text-[10px] font-black px-1 opacity-0 select-none">ADD</span> </button>
                            </div>
                        )}
@@ -594,12 +627,10 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   );
 };
 
-// Vertical Slide Ticker Component (Fixed for smooth infinite loop)
+// Vertical Slide Ticker Component
 const HonorTicker = ({ items }: { items: any[] }) => {
-    // Ensure we have items
     if (!items || items.length === 0) return null;
     
-    // Single item static display
     if (items.length === 1) {
         return (
             <div className="flex items-center gap-2 w-full h-full">
@@ -616,7 +647,6 @@ const HonorTicker = ({ items }: { items: any[] }) => {
     const [isTransitioning, setIsTransitioning] = useState(true);
     const totalItems = items.length;
     
-    // Create the display list with cloned first item for loop
     const stableItems = useMemo(() => items, [JSON.stringify(items)]);
     const displayList = useMemo(() => [...stableItems, stableItems[0]], [stableItems]);
 
@@ -636,7 +666,7 @@ const HonorTicker = ({ items }: { items: any[] }) => {
             const timer = setTimeout(() => {
                 setIsTransitioning(false);
                 setCurrentIndex(0);
-            }, 500); // Match transition duration
+            }, 500);
             return () => clearTimeout(timer);
         }
     }, [currentIndex, totalItems]);
