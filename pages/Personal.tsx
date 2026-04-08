@@ -43,7 +43,7 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
 
   return (
     <div className="h-full overflow-y-auto px-4 py-6 space-y-8 no-scrollbar pb-28">
-      {/* Profile Header */}
+      {/* Profile Header - 修正版：名字與標籤拉開，並防止卡到按鈕 */}
       <section className="relative">
          <div className="aspect-[4/5] rounded-[32px] bg-zinc-900 overflow-hidden relative border border-white/5">
             {person?.b_url ? (
@@ -53,7 +53,6 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
             
-            {/* 資訊顯示區塊 */}
             <div className="absolute bottom-6 left-6 right-6 flex items-end gap-4">
                {/* 大頭貼 */}
                <div className="w-24 h-24 rounded-3xl border-2 border-chiachia-green bg-zinc-950 shadow-glow-green overflow-hidden relative shrink-0">
@@ -64,24 +63,19 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
                   )}
                </div>
 
-               {/* 姓名與年齡 */}
-               <div className="pb-1 min-w-0 flex-1">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    {/* 移除 truncate，確保名稱不被切掉 */}
-                    <h2 className="text-3xl font-black text-white italic whitespace-nowrap">
-                      {person?.full_name || person?.name || '---'}
-                    </h2>
-                    
-                    {/* AGE 標籤：仿照截圖中的深色 Badge 樣式 */}
-                    <div className="bg-zinc-800/80 backdrop-blur-sm border border-white/10 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-lg">
-                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">AGE</span>
-                        <span className="text-sm font-black text-white font-mono leading-none">
-                            {person?.birthday ? (
-                                // 如果你有年齡計算邏輯可以放在這，目前先保留原本的欄位顯示
-                                person.birthday 
-                            ) : '-'}
-                        </span>
-                    </div>
+               {/* 資訊區塊 - 橫向佈局並推開標籤 */}
+               <div className="pb-1 min-w-0 flex-1 flex items-center pr-14">
+                  {/* 名字：加上 pr-4 確保斜體不會切到，shrink-0 確保名字不會被壓縮 */}
+                  <h2 className="text-3xl font-black text-white italic leading-tight shrink-0 pr-4">
+                    {person?.full_name || person?.name || '---'}
+                  </h2>
+                  
+                  {/* AGE 標籤：使用 ml-auto 推到最右邊 */}
+                  <div className="ml-auto bg-zinc-800/90 backdrop-blur-sm border border-white/10 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-xl shrink-0">
+                      <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">AGE</span>
+                      <span className="text-sm font-black text-white font-mono leading-none">
+                          {person?.birthday || '-'}
+                      </span>
                   </div>
                </div>
             </div>
