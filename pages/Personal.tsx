@@ -2,16 +2,24 @@ import React, { useState, useMemo } from 'react';
 import { api } from '../services/api';
 import { uploadImage } from '../services/supabase';
 import { DataRecord, LookupItem } from '../types';
-import { User, Award, Activity, Camera, UploadCloud, Loader2, ChevronRight, Trophy, MapPin } from 'lucide-react';
+import { User, Award, Activity, Camera, UploadCloud, Loader2, ChevronRight, Trophy, MapPin, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { hasRole, ROLES } from '../utils/auth';
 
 const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refreshData, activePersonId, onSelectPerson, onNavigateToTraining }) => {
   const [uploading, setUploading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState(''); // 新增搜尋狀態
 
   const person = useMemo(() => people.find((p: any) => String(p.id) === String(activePersonId)), [people, activePersonId]);
   
   const personalData = useMemo(() => data.filter((d: any) => String(d.people_id) === String(activePersonId)), [data, activePersonId]);
+
+  // 過濾後的選手清單 (包含過濾隱藏選手與開發者角色)
+  const filteredRiders = useMemo(() => {
+    return people
+      .filter((p: any) => !p.is_hidden && !hasRole(p, ROLES.DEV))
+      .filter((p: any) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [people, searchTerm]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>, typeSuffix: 's' | 'b') => {
     const file = e.target.files?.[0];
@@ -43,7 +51,7 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
 
   return (
     <div className="h-full overflow-y-auto px-4 py-6 space-y-8 no-scrollbar pb-28">
-      {/* Profile Header - 修正版：名字與標籤拉開，並防止卡到按鈕 */}
+      {/* Profile Header - 修正版：使用 justify-between 強力推開標籤 */}
       <section className="relative">
          <div className="aspect-[4/5] rounded-[32px] bg-zinc-900 overflow-hidden relative border border-white/5">
             {person?.b_url ? (
@@ -63,19 +71,21 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
                   )}
                </div>
 
-               {/* 資訊區塊 - 橫向佈局並推開標籤 */}
-               <div className="pb-1 min-w-0 flex-1 flex items-center pr-14">
-                  {/* 名字：加上 pr-4 確保斜體不會切到，shrink-0 確保名字不會被壓縮 */}
-                  <h2 className="text-3xl font-black text-white italic leading-tight shrink-0 pr-4">
-                    {person?.full_name || person?.name || '---'}
-                  </h2>
-                  
-                  {/* AGE 標籤：使用 ml-auto 推到最右邊 */}
-                  <div className="ml-auto bg-zinc-800/90 backdrop-blur-sm border border-white/10 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-xl shrink-0">
-                      <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">AGE</span>
-                      <span className="text-sm font-black text-white font-mono leading-none">
-                          {person?.birthday || '-'}
-                      </span>
+               {/* 資訊區塊 - 確保寬度 100% 並使用 justify-between */}
+               <div className="pb-1 min-w-0 flex-1">
+                  <div className="flex justify-between items-center w-full gap-4">
+                    {/* 名字： pr-2 防止斜體被切掉 */}
+                    <h2 className="text-3xl font-black text-white italic leading-tight truncate pr-2">
+                      {person?.full_name || person?.name || '---'}
+                    </h2>
+                    
+                    {/* AGE 標籤：獨立 Badge，不縮小並維持在右側 */}
+                    <div className="bg-zinc-800/90 backdrop-blur-sm border border-white/10 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-xl shrink-0">
+                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">AGE</span>
+                        <span className="text-sm font-black text-white font-mono leading-none">
+                            {person?.birthday || '-'}
+                        </span>
+                    </div>
                   </div>
                </div>
             </div>
@@ -98,15 +108,34 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
           </div>
       </div>
 
-      {/* Rider Selector */}
+      {/* 選手選擇與搜尋區塊 */}
       <section className="space-y-4">
-          <div className="text-[10px] font-black text-zinc-600 tracking-[0.3em] uppercase">Switch Rider</div>
-          <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4">
-              {people.filter((p:any) => !p.is_hidden && !hasRole(p, ROLES.DEV)).map((p: any) => (
+          <div className="text-[10px] font-black text-zinc-600 tracking-[0.3em] uppercase">選擇</div>
+          
+          {/* 動態搜尋框 */}
+          <div className="relative group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-chiachia-green transition-colors" size={16} />
+              <input 
+                type="text" 
+                placeholder="搜尋選手姓名 (例如: 睿)..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl py-3 pl-12 pr-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-chiachia-green/30 focus:bg-zinc-900 transition-all"
+              />
+              {searchTerm && (
+                  <button onClick={() => setSearchTerm('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white">
+                      <Loader2 size={14} className={uploading ? "animate-spin" : "hidden"} />
+                      {!uploading && "清除"}
+                  </button>
+              )}
+          </div>
+
+          <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4 py-1">
+              {filteredRiders.map((p: any) => (
                   <button 
                     key={p.id} 
                     onClick={() => onSelectPerson(p.id)}
-                    className={`shrink-0 flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all ${String(p.id) === String(activePersonId) ? 'bg-chiachia-green border-chiachia-green text-black shadow-glow-green scale-105' : 'bg-zinc-900 border-white/5 text-white'}`}
+                    className={`shrink-0 flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all ${String(p.id) === String(activePersonId) ? 'bg-chiachia-green border-chiachia-green text-black shadow-glow-green scale-105' : 'bg-zinc-900 border-white/5 text-white hover:bg-zinc-800'}`}
                   >
                       <div className={`w-12 h-12 rounded-full overflow-hidden border-2 ${String(p.id) === String(activePersonId) ? 'border-black' : 'border-zinc-800'}`}>
                           {p.s_url ? <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-zinc-800" />}
@@ -114,6 +143,9 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
                       <span className="text-[10px] font-black">{p.name}</span>
                   </button>
               ))}
+              {filteredRiders.length === 0 && (
+                  <div className="text-zinc-600 text-[10px] font-bold py-4 px-2 italic">找不到包含 "{searchTerm}" 的選手</div>
+              )}
           </div>
       </section>
 
