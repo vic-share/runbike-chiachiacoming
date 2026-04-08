@@ -31,7 +31,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, id?: string|number}>({ show: false });
   const [submitting, setSubmitting] = useState(false);
 
-  // --- 改良：將樂觀狀態改為物件儲存，Key 為選手 ID ---
+  // --- 按選手 ID 儲存的樂觀狀態 ---
   const [localLastValues, setLocalLastValues] = useState<Record<string, string>>({});
   const [localCountOffsets, setLocalCountOffsets] = useState<Record<string, number>>({});
   
@@ -44,7 +44,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
     return people.filter((p: any) => hasRole(p, ROLES.RIDER) && !hasRole(p, ROLES.DEV));
   }, [people]);
 
-  // Deep Link Handling
+  // Deep Link & Randomizer Logic
   useEffect(() => {
       if (initialExpandedDate) {
           setDateRange('ALL');
@@ -61,7 +61,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }
   }, [initialExpandedDate]);
 
-  // Initial Selection & Randomizer
   useEffect(() => {
       const KEY = 'TRAINING_LAST_RIDER_TIME';
       const lastTime = localStorage.getItem(KEY);
@@ -193,7 +192,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }));
   }, [groupedRecords]);
 
-  // --- 改良：計算當前每個選手今日真實的次數 ---
+  // 今日各選手真實次數
   const todayCountsByRider = useMemo(() => {
       const counts: Record<string, number> = {};
       const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -207,26 +206,18 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       return counts;
   }, [data, selectedType]);
 
-  // 數學對帳法：按選手 PID 獨立對帳
   const prevTodayCountsRef = useRef<Record<string, number>>(todayCountsByRider);
 
   useEffect(() => {
       Object.keys(todayCountsByRider).forEach(pid => {
           const currentBaseCount = todayCountsByRider[pid] || 0;
           const prevBaseCount = prevTodayCountsRef.current[pid] || 0;
-
           if (currentBaseCount > prevBaseCount) {
               const diff = currentBaseCount - prevBaseCount;
               setLocalCountOffsets(prev => {
-                  const currentOffset = prev[pid] || 0;
-                  const nextOffset = Math.max(0, currentOffset - diff);
-                  // 如果對帳完了，清除 PREV 字樣
+                  const nextOffset = Math.max(0, (prev[pid] || 0) - diff);
                   if (nextOffset === 0) {
-                      setLocalLastValues(v => {
-                          const newV = { ...v };
-                          delete newV[pid];
-                          return newV;
-                      });
+                      setLocalLastValues(v => { const newV = { ...v }; delete newV[pid]; return newV; });
                   }
                   return { ...prev, [pid]: nextOffset };
               });
@@ -249,6 +240,9 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
      const todayStr = format(new Date(), 'yyyy-MM-dd');
      return sessionRecords.filter((r: any) => r.date === todayStr);
   }, [sessionRecords]);
+
+  // --- 關鍵補丁：定義 todayCount 變數 ---
+  const todayCount = todaySessionRecords.length;
 
   const todayBestScore = useMemo(() => {
       const scores = todaySessionRecords.map((r: any) => parseFloat(r.value)).filter(v => !isNaN(v));
@@ -274,11 +268,10 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [raceEvents, activeRider]);
 
-  // Actions
   const handleDigitPress = (digit: string) => {
       if (inputValue.length >= 8) return; 
       if (digit === '.' && inputValue.includes('.')) return;
-      if (inputValue.includes('.')) { const [_, decimalPart] = inputValue.split('.'); if (decimalPart && decimalPart.length >= 3) return; }
+      if (inputValue.includes('.')) { const [_, d] = inputValue.split('.'); if (d && d.length >= 3) return; }
       setInputValue(prev => prev + digit);
   };
 
@@ -286,32 +279,18 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       if (!inputValue || parseFloat(inputValue) <= 0) return;
       const targetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
       if (!targetId) { setShowRiderSelectModal(true); return; }
-      
       setSubmitting(true);
       try {
-          const typeId = getSelectedTypeId();
           const valStr = parseFloat(inputValue).toFixed(3);
-          const recordData = { 
-              date: format(new Date(), 'yyyy-MM-dd'), 
-              item: 'training', people_id: targetId, value: valStr, training_type_id: typeId 
-          };
-
-          await saveRecord(recordData);
-
-          // 樂觀更新：更新特定的 PID
+          await saveRecord({ date: format(new Date(), 'yyyy-MM-dd'), item: 'training', people_id: targetId, value: valStr, training_type_id: getSelectedTypeId() });
           setLocalLastValues(prev => ({ ...prev, [targetId]: valStr }));
           setLocalCountOffsets(prev => ({ ...prev, [targetId]: (prev[targetId] || 0) + 1 }));
-          
           setInputValue('');
           setFeedbackMsg('SAVED');
           localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now()));
           refreshData(); 
           setTimeout(() => setFeedbackMsg(null), 1500);
-      } catch (e) { 
-          alert('紀錄失敗'); 
-      } finally {
-          setSubmitting(false); 
-      }
+      } catch (e) { alert('紀錄失敗'); } finally { setSubmitting(false); }
   };
 
   const handleRiderSelection = (id: string) => {
@@ -327,33 +306,20 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                   return next; 
               } 
           });
-      } else { 
-          onSelectPerson(id); 
-          localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now())); 
-          setShowRiderSelectModal(false); 
-      }
+      } else { onSelectPerson(id); localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now())); setShowRiderSelectModal(false); }
   };
 
   const handleDeleteRecord = async () => {
       if (!deleteConfirm.id) return;
       setSubmitting(true);
-      try { 
-          await api.manageTrainingRecord('delete', { id: deleteConfirm.id }); 
-          await refreshData(); 
-          setDeleteConfirm({ show: false }); 
-          setShowHistoryModal({ show: false }); 
-      } catch(e) { alert('刪除失敗'); }
+      try { await api.manageTrainingRecord('delete', { id: deleteConfirm.id }); await refreshData(); setDeleteConfirm({ show: false }); setShowHistoryModal({ show: false }); } catch(e) { alert('刪除失敗'); }
       setSubmitting(false);
   };
 
   const handleSaveEdit = async (record: any) => {
       if (!record || !editHistoryValue || isNaN(parseFloat(editHistoryValue))) return;
       setSubmitting(true);
-      try { 
-          await api.manageTrainingRecord('update', { id: record.id, score: parseFloat(editHistoryValue).toFixed(3), date: record.date, training_type_id: record.training_type_id }); 
-          await refreshData(); 
-          setEditingHistoryId(null); 
-      } catch(e) { alert('更新失敗'); }
+      try { await api.manageTrainingRecord('update', { id: record.id, score: parseFloat(editHistoryValue).toFixed(3), date: record.date, training_type_id: record.training_type_id }); await refreshData(); setEditingHistoryId(null); } catch(e) { alert('更新失敗'); }
       setSubmitting(false);
   };
 
@@ -363,48 +329,42 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
     setDateRange('ALL'); setExpandedDate(r.date);
     setTimeout(() => { 
         const el = document.getElementById(`record-${r.id}`); 
-        if (el) { 
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' }); 
-            el.classList.add('bg-amber-500/20'); 
-            setTimeout(() => el.classList.remove('bg-amber-500/20'), 1500); 
-        } 
+        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('bg-amber-500/20'); setTimeout(() => el.classList.remove('bg-amber-500/20'), 1500); } 
     }, 600);
   };
+
+  const currentTargetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
+  const riderLastValue = currentTargetId ? localLastValues[currentTargetId] : null;
+  const riderCountOffset = currentTargetId ? (localCountOffsets[currentTargetId] || 0) : 0;
 
   const renderOverview = () => (
       <div className="flex flex-col relative pb-32">
            {canRecord && (
                <div className="px-4 py-6 mt-4 relative z-50">
-                   <button onClick={() => setIsRecordingMode(true)} className="w-full bg-gradient-to-r from-chiachia-green to-emerald-600 text-black h-14 rounded-2xl shadow-[0_0_20px_rgba(57,231,95,0.4)] flex items-center justify-center gap-3 active:scale-[0.98] transition-all group cursor-pointer">
+                   <button onClick={() => setIsRecordingMode(true)} className="w-full bg-gradient-to-r from-chiachia-green to-emerald-600 text-black h-14 rounded-2xl shadow-[0_0_20px_rgba(57,231,95,0.4)] flex items-center justify-center gap-3 active:scale-[0.98] transition-all group">
                        <Play size={20} fill="black" className="group-hover:scale-110 transition-transform" />
                        <span className="text-xl font-black italic tracking-wider">START TRAINING</span>
                    </button>
                </div>
            )}
-
            <div className="relative w-full h-[55vh] shrink-0 mx-auto px-4 z-0">
                <div className="w-full h-full rounded-[32px] overflow-hidden relative border border-white/5 bg-zinc-900">
                    {activeRider?.b_url ? ( <img src={activeRider.b_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-900 gap-2"> <Camera size={32} /> <span className="text-xs font-black uppercase tracking-widest">No Cover Photo</span> </div> )}
                    <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black via-black/60 to-transparent"></div>
-                   
-                   <button onClick={() => setShowRiderSelectModal(true)} className="absolute bottom-6 right-5 w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white z-50 border border-white/20 active:scale-95 transition-all shadow-lg hover:bg-white/20"> 
-                       <Users size={20} /> 
-                   </button>
-                   
+                   <button onClick={() => setShowRiderSelectModal(true)} className="absolute bottom-6 right-5 w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white z-50 border border-white/20 active:scale-95 shadow-lg"> <Users size={20} /> </button>
                    <div className="absolute bottom-6 left-5 right-16 flex items-end gap-4 z-20">
-                       <div className="w-20 h-20 rounded-full border-2 border-white bg-zinc-950 shadow-2xl overflow-hidden shrink-0 flex items-center justify-center"> {activeRider?.s_url ? ( <img src={activeRider.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className="font-black text-4xl text-white"> {activeRider?.name?.[0] || '?'} </span> )} </div>
+                       <div className="w-20 h-20 rounded-full border-2 border-white bg-zinc-950 shadow-2xl overflow-hidden flex items-center justify-center"> {activeRider?.s_url ? ( <img src={activeRider.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className="font-black text-4xl text-white"> {activeRider?.name?.[0] || '?'} </span> )} </div>
                        <div className="flex-1 min-w-0 pb-1">
-                            <div className="flex items-center gap-2"> <h2 className="text-2xl font-black text-white italic tracking-tight drop-shadow-lg truncate">{activeRider?.name || '---'}</h2> {activeRider && <span className="text-xs bg-white/20 backdrop-blur-md text-white px-2 py-0.5 rounded font-black font-mono shadow-sm">AGE {activeRider.birthday ? differenceInYears(new Date(), new Date(activeRider.birthday)) : '-'}</span>} </div>
-                            {activeRider?.myword && ( <button onClick={() => setShowBioModal(true)} className="text-left w-full group focus:outline-none relative z-40"> <p className="text-sm font-bold text-zinc-300 drop-shadow-md italic mt-1 group-active:scale-95 transition-all group-hover:text-white truncate"> "{activeRider.myword}" </p> </button> )}
+                            <div className="flex items-center gap-2"> <h2 className="text-2xl font-black text-white italic tracking-tight truncate">{activeRider?.name || '---'}</h2> {activeRider && <span className="text-xs bg-white/20 backdrop-blur-md text-white px-2 py-0.5 rounded font-black font-mono">AGE {activeRider.birthday ? differenceInYears(new Date(), new Date(activeRider.birthday)) : '-'}</span>} </div>
+                            {activeRider?.myword && ( <button onClick={() => setShowBioModal(true)} className="text-left w-full group focus:outline-none relative z-40"> <p className="text-sm font-bold text-zinc-300 italic mt-1 group-active:scale-95 transition-all truncate"> "{activeRider.myword}" </p> </button> )}
                        </div>
                    </div>
                </div>
            </div>
-
            <div className="px-4 -mt-4 relative z-30">
                <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl flex items-center shadow-2xl overflow-hidden">
                    <button onClick={handleJumpToLegend} className="flex items-center gap-3 px-4 py-3 pr-5 border-r border-white/10 hover:bg-white/5 transition-colors group text-left min-w-[120px]">
-                       <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20 group-active:scale-90 transition-transform"> <Trophy size={14} /> </div>
+                       <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20 group-active:scale-90"> <Trophy size={14} /> </div>
                        <div className="flex flex-col"> <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Personal Best</span> {personalBestRecord ? ( <span className="text-base font-black font-mono text-white leading-none">{parseFloat(personalBestRecord.value).toFixed(3)}s</span> ) : ( <span className="text-sm font-bold text-zinc-600 leading-none">--.--</span> )} </div>
                    </button>
                    <div className="flex-1 overflow-hidden h-[54px] relative px-4 flex items-center">
@@ -412,14 +372,12 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                    </div>
                </div>
            </div>
-
            <div className="px-4 py-4 space-y-4 relative z-10 mt-2">
                <div className="flex justify-between items-center gap-2">
                    <div className="relative flex-1">
-                       <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="w-full bg-zinc-900 border border-white/10 text-white text-sm font-black uppercase tracking-wider rounded-xl px-3 py-2 pr-8 outline-none appearance-none h-10"> {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} </select>
+                       <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="w-full bg-zinc-900 border border-white/10 text-white text-sm font-black uppercase rounded-xl px-3 py-2 pr-8 outline-none appearance-none h-10"> {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} </select>
                        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"/>
                    </div>
-                   
                    <div className="relative flex-1 max-w-[160px] z-50">
                        <button onClick={() => setIsDateMenuOpen(!isDateMenuOpen)} className={`relative flex items-center justify-between px-3 h-10 w-full rounded-xl border transition-all ${isDateMenuOpen ? 'bg-zinc-800 border-white/20 text-white' : 'bg-zinc-900/60 border-white/5 text-zinc-500'}`}>
                            <div className="flex items-center gap-2 min-w-0 overflow-hidden">
@@ -448,17 +406,15 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                        )}
                    </div>
                </div>
-
                <div className="h-44 w-full shrink-0">
                     <SimpleComposedChart data={chartData} xKey="date" areaKey="avg" lineKeys={[{ key: 'best', color: '#fbbf24' }, { key: 'stability', color: '#3b82f6', strokeDasharray: '4 4' }]} showXAxis={true} xAxisFormatter={(val: any) => String(val)} />
                </div>
-               
                <div className="space-y-3">
                    {groupedRecords.map((group) => {
                        const isExpanded = expandedDate === group.date;
                        const dDate = parseISO(group.date);
                        return (
-                           <div key={group.date} id={`date-card-${group.date}`} className="rounded-2xl bg-zinc-950/40 border border-white/5 overflow-hidden transition-all backdrop-blur-sm">
+                           <div key={group.date} id={`date-card-${group.date}`} className="rounded-2xl bg-zinc-950/40 border border-white/5 overflow-hidden backdrop-blur-sm">
                                <button onClick={() => setExpandedDate(isExpanded ? null : group.date)} className={`w-full flex items-stretch text-left ${isExpanded ? 'bg-zinc-900/50' : ''}`}>
                                    <div className={`w-20 flex flex-col items-center justify-center p-2 border-r border-white/5 ${isExpanded ? 'bg-chiachia-green/10 text-chiachia-green' : 'bg-zinc-900 text-zinc-500'}`}> <span className="text-[10px] font-black uppercase tracking-wider">{format(dDate, 'MMM')}</span> <span className="text-2xl font-black font-mono leading-none">{format(dDate, 'dd')}</span> </div>
                                    <div className="flex-1 flex items-center p-2 gap-4 min-w-0 overflow-x-auto no-scrollbar">
@@ -490,11 +446,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       </div>
   );
 
-  // --- UI Logic Helpers for Recording Mode ---
-  const currentTargetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
-  const riderLastValue = currentTargetId ? localLastValues[currentTargetId] : null;
-  const riderCountOffset = currentTargetId ? (localCountOffsets[currentTargetId] || 0) : 0;
-
   return (
     <div className="relative w-full">
         {renderOverview()}
@@ -505,10 +456,8 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                     <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1.5 rounded-full border border-white/5 absolute left-1/2 -translate-x-1/2"> <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div> <span className="text-white text-xs font-black italic tracking-widest">REC</span> </div>
                     <button onClick={() => setShowHistoryModal({show: true})} className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 border border-white/5"> <History size={18} /> </button>
                </div>
-
                <div className="shrink-0 flex flex-col items-center justify-start pb-2 border-b border-white/5 bg-zinc-950 relative z-10">
                    <div className="relative inline-block z-20 mb-1"> <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="appearance-none bg-zinc-900/50 border border-white/10 text-zinc-400 text-sm font-black uppercase tracking-widest py-1.5 pl-3 pr-6 rounded-full outline-none text-center"> {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} </select> <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" size={14} /> </div>
-                   
                    <div className="flex items-center gap-4 mb-1"> 
                        {(riderLastValue || lastRecordValue) && ( 
                            <div className="text-xs font-black text-zinc-600 font-mono flex items-center gap-1.5 px-2 py-0.5 rounded-lg"> 
@@ -521,11 +470,9 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                            <span className="text-chiachia-green">{todayCount + riderCountOffset}</span> 
                        </div> 
                    </div>
-
-                   <div className="relative w-full text-center px-4"> <span className={`font-mono font-black tracking-tighter leading-none text-white drop-shadow-[0_0_30px_rgba(57,231,95,0.1)] transition-all ${inputValue.length > 4 ? 'text-6xl' : 'text-7xl'}`}> {inputValue || '0.00'} </span> <span className="text-2xl font-black text-zinc-700 ml-1 italic absolute bottom-4">s</span> </div>
+                   <div className="relative w-full text-center px-4"> <span className={`font-mono font-black tracking-tighter leading-none text-white transition-all ${inputValue.length > 4 ? 'text-6xl' : 'text-7xl'}`}> {inputValue || '0.00'} </span> <span className="text-2xl font-black text-zinc-700 ml-1 italic absolute bottom-4">s</span> </div>
                    <div className="h-6 flex flex-col items-center justify-center w-full mt-1"> {feedbackMsg && ( <div className="bg-chiachia-green text-black px-4 py-1 rounded-full text-[10px] font-black tracking-widest animate-scale-in"> {feedbackMsg} </div> )} </div>
                </div>
-
                <div className="flex-1 min-h-0 bg-black relative w-full overflow-y-auto no-scrollbar flex flex-col">
                    <div className="flex-grow w-full flex flex-col p-2 min-h-0">
                        {validRiders.length === 0 ? (
@@ -537,64 +484,58 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                                     const isActive = currentRiderId === pid; 
                                     const baseCount = todayCountsByRider[pid] || 0;
                                     const displayCount = baseCount + (localCountOffsets[pid] || 0);
-
                                     return ( 
-                                         <button key={pid} onClick={() => setCurrentRiderId(pid)} className={`relative group transition-all flex flex-col items-center gap-1.5 ${isActive ? 'scale-105 z-10' : 'opacity-60 scale-95'}`}> 
+                                         <button key={pid} onClick={() => setCurrentRiderId(pid)} className={`relative group flex flex-col items-center gap-1.5 ${isActive ? 'scale-105 z-10' : 'opacity-60 scale-95'}`}> 
                                              <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 bg-zinc-900 relative flex items-center justify-center mx-auto ${isActive ? 'border-chiachia-green shadow-[0_0_15px_rgba(57,231,95,0.6)]' : 'border-zinc-800'}`}> 
                                                  {p.s_url ? ( <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className={`text-xl font-black ${isActive ? 'text-chiachia-green' : 'text-zinc-600'}`}> {p.name?.[0]} </span> )} 
                                              </div> 
                                              <div className="flex items-center justify-center gap-1 max-w-full px-1">
                                                  <span className={`text-[10px] font-black truncate ${isActive ? 'text-chiachia-green' : 'text-zinc-500'}`}> {p.name} </span> 
-                                                 {displayCount > 0 && (
-                                                     <span className={`text-[9px] font-black px-1 rounded ${isActive ? 'bg-chiachia-green text-black' : 'bg-zinc-800 text-zinc-400'}`}> {displayCount} </span>
-                                                 )}
+                                                 {displayCount > 0 && ( <span className={`text-[9px] font-black px-1 rounded ${isActive ? 'bg-chiachia-green text-black' : 'bg-zinc-800 text-zinc-400'}`}> {displayCount} </span> )}
                                              </div>
                                          </button> 
                                     ); 
                                })}
-                               <button onClick={() => setShowRiderSelectModal(true)} className="relative group transition-all flex flex-col items-center gap-1.5"> <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-dashed border-zinc-700 bg-zinc-900/50 flex items-center justify-center mx-auto"> <Plus size={24} className="text-zinc-500" strokeWidth={3} /> </div> </button>
+                               <button onClick={() => setShowRiderSelectModal(true)} className="relative group flex flex-col items-center gap-1.5"> <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-dashed border-zinc-700 bg-zinc-900/50 flex items-center justify-center mx-auto"> <Plus size={24} className="text-zinc-500" strokeWidth={3} /> </div> </button>
                            </div>
                        )}
                    </div>
                </div>
-               
                <div className="flex-none bg-zinc-950 border-t border-white/10 relative z-30 pb-4 pt-2 shadow-[0_-10px_40px_rgba(0,0,0,1)]">
-                   <div className="grid grid-cols-3 gap-1 px-4"> {[1,2,3,4,5,6,7,8,9,'.',0].map(n => ( <button key={n} onClick={() => handleDigitPress(String(n))} className="h-14 bg-zinc-900 rounded-xl text-3xl font-black text-white active:bg-zinc-800 active:scale-95 transition-all flex items-center justify-center border border-white/5"> {n} </button> ))} <button onClick={() => setInputValue(prev => prev.slice(0, -1))} className="h-14 bg-zinc-900/50 rounded-xl text-xl font-black text-rose-500 flex items-center justify-center border border-white/5 uppercase"> <Delete size={28} /> </button> </div>
+                   <div className="grid grid-cols-3 gap-1 px-4"> {[1,2,3,4,5,6,7,8,9,'.',0].map(n => ( <button key={n} onClick={() => handleDigitPress(String(n))} className="h-14 bg-zinc-900 rounded-xl text-3xl font-black text-white active:bg-zinc-800 active:scale-95 flex items-center justify-center border border-white/5"> {n} </button> ))} <button onClick={() => setInputValue(prev => prev.slice(0, -1))} className="h-14 bg-zinc-900/50 rounded-xl text-xl font-black text-rose-500 flex items-center justify-center border border-white/5 uppercase"> <Delete size={28} /> </button> </div>
                    <div className="px-4 pt-2"> <button onClick={handleRecordSubmit} disabled={submitting || !inputValue} className="w-full h-14 bg-gradient-to-r from-chiachia-green to-emerald-600 text-black font-black text-2xl italic tracking-widest rounded-xl shadow-[0_0_20px_rgba(57,231,95,0.4)] active:scale-[0.98] transition-all uppercase flex items-center justify-center gap-3 disabled:opacity-30"> {submitting ? <Loader2 className="animate-spin" /> : 'ENTER RECORD'} </button> </div>
                </div>
           </div>
         , document.body)}
 
-        {/* --- Modals (Keep all original ones) --- */}
+        {/* Modals */}
         {deleteConfirm.show && createPortal(
           <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
               <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-chiachia-green/20 text-center animate-scale-in">
                   <div className="w-16 h-16 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto mb-4"> <AlertTriangle size={32} /> </div>
                   <h3 className="text-xl font-black text-white italic mb-2">刪除紀錄</h3>
-                  <p className="text-zinc-400 text-sm font-bold mb-6">確定要刪除此筆訓練紀錄嗎？此動作無法復原。</p>
+                  <p className="text-zinc-400 text-sm font-bold mb-6">確定要刪除此筆訓練紀錄嗎？</p>
                   <div className="grid grid-cols-2 gap-3"> <button onClick={() => setDeleteConfirm({ show: false })} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl">取消</button> <button onClick={handleDeleteRecord} disabled={submitting} className="py-3 bg-rose-600 text-white font-black rounded-xl flex items-center justify-center"> {submitting ? <Loader2 size={16} className="animate-spin" /> : '確認刪除'} </button> </div>
               </div>
           </div>
         , document.body)}
-
         {showBioModal && createPortal( 
           <div className="fixed inset-0 z-[60000] flex items-center justify-center p-6 bg-black/90 backdrop-blur-md animate-fade-in" onClick={() => setShowBioModal(false)}> 
-            <div className="glass-card w-full max-w-sm rounded-3xl p-6 border-white/10 flex flex-col gap-4 animate-scale-in relative shadow-xl" onClick={e => e.stopPropagation()}> 
+            <div className="glass-card w-full max-w-sm rounded-3xl p-6 border-white/10 flex flex-col gap-4 animate-scale-in relative" onClick={e => e.stopPropagation()}> 
               <button onClick={() => setShowBioModal(false)} className="absolute top-4 left-4 text-zinc-500 hover:text-white p-1"><X size={20}/></button> 
               <div className="flex flex-col items-center gap-3"> 
                 <div className="w-14 h-14 rounded-full border-2 border-white bg-zinc-950 overflow-hidden shadow-lg"> {activeRider?.s_url ? <img src={activeRider.s_url.split('#')[0]} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><UserCircle2 size={32}/></div>} </div> 
-                <div className="text-center"> <h3 className="text-xl font-black text-white italic">{activeRider?.name}</h3> <div className="text-xs text-zinc-500 font-bold uppercase tracking-widest">About Me</div> </div> 
+                <div className="text-center"> <h3 className="text-xl font-black text-white italic">{activeRider?.name}</h3> <div className="text-xs text-zinc-500 font-bold uppercase">About Me</div> </div> 
               </div> 
-              <div className="bg-zinc-900/50 p-6 rounded-2xl border border-white/5 relative mt-2"> <Quote size={20} className="absolute top-4 left-4 text-chiachia-green/20" /> <p className="text-base font-bold text-zinc-300 leading-relaxed whitespace-pre-wrap relative z-10 text-center"> {activeRider?.myword || 'No bio available.'} </p> <Quote size={20} className="absolute bottom-4 right-4 text-chiachia-green/20 rotate-180" /> </div> 
+              <div className="bg-zinc-900/50 p-6 rounded-2xl border border-white/5 relative mt-2"> <Quote size={20} className="absolute top-4 left-4 text-chiachia-green/20" /> <p className="text-base font-bold text-zinc-300 leading-relaxed text-center"> {activeRider?.myword || 'No bio available.'} </p> <Quote size={20} className="absolute bottom-4 right-4 text-chiachia-green/20 rotate-180" /> </div> 
             </div> 
           </div> 
         , document.body)}
-
         {showRiderSelectModal && createPortal( 
           <div className="fixed inset-0 z-[60000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowRiderSelectModal(false)}> 
             <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 animate-slide-up max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}> 
-              <div className="flex items-center justify-between border-b border-white/5 pb-4"> <button onClick={() => setShowRiderSelectModal(false)} className="w-10 h-10 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={20}/></button> <h3 className="text-xl font-black text-white italic pr-2">{isRecordingMode ? 'Select Riders' : 'Switch Rider'}</h3> <div className="w-8"></div> </div> 
-              <div className="flex-1 overflow-y-auto no-scrollbar grid grid-cols-2 gap-4 p-1"> 
+              <div className="flex items-center justify-between border-b border-white/5 pb-4"> <button onClick={() => setShowRiderSelectModal(false)} className="w-10 h-10 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={20}/></button> <h3 className="text-xl font-black text-white italic">{isRecordingMode ? 'Select Riders' : 'Switch Rider'}</h3> <div className="w-8"></div> </div> 
+              <div className="flex-1 overflow-y-auto grid grid-cols-2 gap-4 p-1"> 
                 {sortedPeople.map((p: any) => { 
                   const isSelected = isRecordingMode ? participatingRiderIds.includes(String(p.id)) : String(p.id) === String(activeRider?.id); 
                   return ( 
@@ -606,31 +547,30 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                   ); 
                 })} 
               </div> 
-              {isRecordingMode && <button onClick={() => setShowRiderSelectModal(false)} className="w-full py-4 bg-zinc-800 text-white font-bold rounded-xl active:scale-95 transition-all">Done ({participatingRiderIds.length})</button>} 
+              {isRecordingMode && <button onClick={() => setShowRiderSelectModal(false)} className="w-full py-4 bg-zinc-800 text-white font-bold rounded-xl">Done ({participatingRiderIds.length})</button>} 
             </div> 
           </div> 
         , document.body)}
-
         {showHistoryModal.show && createPortal( 
           <div className="fixed inset-0 z-[60000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowHistoryModal({ show: false })}> 
             <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 animate-slide-up max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}> 
-              <div className="flex justify-between items-center border-b border-white/5 pb-4"> <h3 className="text-2xl font-black text-white italic">Record History</h3> <button onClick={() => setShowHistoryModal({ show: false })} className="p-2 bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> </div> 
-              <div className="flex-1 overflow-y-auto no-scrollbar space-y-2"> 
+              <div className="flex justify-between items-center border-b border-white/5 pb-4"> <h3 className="text-2xl font-black text-white italic">History</h3> <button onClick={() => setShowHistoryModal({ show: false })} className="p-2 bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> </div> 
+              <div className="flex-1 overflow-y-auto space-y-2"> 
                 {todaySessionRecords.map((r: any, idx: number) => { 
                   const runNumber = todaySessionRecords.length - idx; 
                   const isEditing = editingHistoryId === r.id; 
                   const isBest = todayBestScore !== null && Math.abs(parseFloat(r.value) - todayBestScore) < 0.0001; 
                   return ( 
-                    <div key={r.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-colors group ${isEditing ? 'bg-zinc-800 border-chiachia-green/30' : 'bg-zinc-900/40 border-white/5 hover:bg-zinc-900'}`}> 
+                    <div key={r.id} className={`flex items-center justify-between p-3 rounded-2xl border ${isEditing ? 'bg-zinc-800 border-chiachia-green/30' : 'bg-zinc-900/40 border-white/5'}`}> 
                       <div className="flex items-center gap-3"> 
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs font-mono border ${isBest ? 'bg-amber-500/10 text-amber-500 border-amber-500/30' : 'bg-zinc-950 text-zinc-500 border-white/5'}`}> #{runNumber} </div> 
-                        <div> {isEditing ? ( <div className="text-[10px] text-chiachia-green font-bold uppercase tracking-wider">Editing...</div> ) : ( <div className="flex items-baseline gap-2"> <div className="text-2xl font-black text-white font-mono leading-none"> {parseFloat(r.value).toFixed(3)}<span className="text-xs text-zinc-600 ml-0.5">s</span> </div> {isBest && ( <div className="text-[10px] font-black text-amber-400 italic tracking-wider flex items-center gap-1"> <Trophy size={10} strokeWidth={3} /> BEST </div> )} </div> )} </div> 
+                        <div> {isEditing ? <div className="text-[10px] text-chiachia-green font-bold">Editing...</div> : <div className="flex items-baseline gap-2"> <div className="text-2xl font-black text-white font-mono"> {parseFloat(r.value).toFixed(3)}<span className="text-xs text-zinc-600 ml-0.5">s</span> </div> {isBest && <div className="text-[10px] font-black text-amber-400 flex items-center gap-1"> <Trophy size={10} strokeWidth={3} /> BEST </div>} </div>} </div> 
                       </div> 
-                      <div className="flex items-center gap-2"> {isEditing ? ( <> <input type="number" autoFocus value={editHistoryValue} onChange={(e) => setEditHistoryValue(e.target.value)} className="w-20 bg-black border border-white/20 rounded-lg px-2 py-2 text-white font-mono font-bold text-lg text-center" /> <button onClick={() => handleSaveEdit(r)} className="p-2 bg-chiachia-green text-black rounded-lg"><Save size={16}/></button> <button onClick={() => setEditingHistoryId(null)} className="p-2 bg-zinc-700 text-zinc-400 rounded-lg"><X size={16}/></button> </> ) : ( <> <button onClick={() => { setEditingHistoryId(r.id); setEditHistoryValue(r.value); }} className="p-2 bg-zinc-800 text-zinc-400 rounded-lg"> <Edit2 size={16}/> </button> <button onClick={() => setDeleteConfirm({show: true, id: r.id})} className="p-2 bg-rose-500/10 text-rose-500 rounded-lg"> <Trash2 size={16}/> </button> </> )} </div> 
+                      <div className="flex items-center gap-2"> {isEditing ? ( <> <input type="number" autoFocus value={editHistoryValue} onChange={(e) => setEditHistoryValue(e.target.value)} className="w-20 bg-black border border-white/20 rounded-lg p-2 text-white font-mono" /> <button onClick={() => handleSaveEdit(r)} className="p-2 bg-chiachia-green text-black rounded-lg"><Save size={16}/></button> <button onClick={() => setEditingHistoryId(null)} className="p-2 bg-zinc-700 rounded-lg"><X size={16}/></button> </> ) : ( <> <button onClick={() => { setEditingHistoryId(r.id); setEditHistoryValue(r.value); }} className="p-2 bg-zinc-800 text-zinc-400 rounded-lg"><Edit2 size={16}/></button> <button onClick={() => setDeleteConfirm({show: true, id: r.id})} className="p-2 bg-rose-500/10 text-rose-500 rounded-lg"><Trash2 size={16}/></button> </> )} </div> 
                     </div> 
                   ); 
                 })} 
-                {todaySessionRecords.length === 0 && <div className="text-center py-8 text-zinc-600 text-xs">No records for today</div>} 
+                {todaySessionRecords.length === 0 && <div className="text-center py-8 text-zinc-600 text-xs">No records</div>} 
               </div> 
             </div> 
           </div> 
@@ -639,57 +579,35 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   );
 };
 
-// Vertical Slide Ticker Component
+// HonorTicker Component
 const HonorTicker = ({ items }: { items: any[] }) => {
-    if (!items || items.length === 0) return null;
-    
-    if (items.length === 1) {
-        return (
-            <div className="flex items-center gap-2 w-full h-full">
-                <span className="text-[10px] text-zinc-500 font-mono shrink-0">{format(parseISO(items[0].date), 'MM/dd')}</span>
-                <span className="text-xs font-bold text-white truncate min-w-0">{items[0].name}</span>
-                <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest flex items-center gap-1 ml-auto">
-                    <Flame size={10} className="fill-amber-400" /> {items[0].rank}
-                </span>
-            </div>
-        );
-    }
-
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isTransitioning, setIsTransitioning] = useState(true);
-    const totalItems = items.length;
-    const stableItems = useMemo(() => items, [items]);
-    const displayList = useMemo(() => [...stableItems, stableItems[0]], [stableItems]);
+    const totalItems = items?.length || 0;
+    const stableItems = useMemo(() => items || [], [items]);
+    const displayList = useMemo(() => [...stableItems, stableItems[0]].filter(Boolean), [stableItems]);
 
     useEffect(() => {
         if (totalItems <= 1) return;
-        const interval = setInterval(() => {
-            setIsTransitioning(true);
-            setCurrentIndex((prev) => prev + 1);
-        }, 3000);
+        const interval = setInterval(() => { setIsTransitioning(true); setCurrentIndex(prev => prev + 1); }, 3000);
         return () => clearInterval(interval);
     }, [totalItems]);
 
     useEffect(() => {
         if (currentIndex >= totalItems && totalItems > 0) {
-            const timer = setTimeout(() => {
-                setIsTransitioning(false);
-                setCurrentIndex(0);
-            }, 500);
-            return () => clearTimeout(timer);
+            setTimeout(() => { setIsTransitioning(false); setCurrentIndex(0); }, 500);
         }
     }, [currentIndex, totalItems]);
 
+    if (totalItems === 0) return null;
     return (
         <div className="relative w-full h-full overflow-hidden">
             <div className="flex flex-col w-full h-full" style={{ transform: `translateY(-${currentIndex * 100}%)`, transition: isTransitioning ? 'transform 0.5s ease-in-out' : 'none' }}>
                 {displayList.map((item, i) => (
                     <div key={i} className="w-full h-full flex-shrink-0 flex items-center gap-2">
-                        <span className="text-[10px] text-zinc-500 font-mono shrink-0">{format(parseISO(item.date), 'MM/dd')}</span>
-                        <span className="text-xs font-bold text-white truncate min-w-0">{item.name}</span>
-                        <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest flex items-center gap-1 ml-auto">
-                            <Flame size={10} className="fill-amber-400" /> {item.rank}
-                        </span>
+                        <span className="text-[10px] text-zinc-500 font-mono">{format(parseISO(item.date), 'MM/dd')}</span>
+                        <span className="text-xs font-bold text-white truncate">{item.name}</span>
+                        <span className="text-[10px] font-black text-amber-400 uppercase flex items-center gap-1 ml-auto"> <Flame size={10} className="fill-amber-400" /> {item.rank} </span>
                     </div>
                 ))}
             </div>
