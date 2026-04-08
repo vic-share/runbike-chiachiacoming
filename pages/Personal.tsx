@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { api } from '../services/api';
 import { uploadImage } from '../services/supabase';
@@ -14,7 +13,6 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
   
   const personalData = useMemo(() => data.filter((d: any) => String(d.people_id) === String(activePersonId)), [data, activePersonId]);
 
-  // [Fix] Corrected handleFileSelect scope and implementation
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>, typeSuffix: 's' | 'b') => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -55,7 +53,9 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
             
+            {/* 資訊顯示區塊 */}
             <div className="absolute bottom-6 left-6 right-6 flex items-end gap-4">
+               {/* 大頭貼 */}
                <div className="w-24 h-24 rounded-3xl border-2 border-chiachia-green bg-zinc-950 shadow-glow-green overflow-hidden relative shrink-0">
                   {person?.s_url ? (
                     <img src={person.s_url.split('#')[0]} className="w-full h-full object-contain p-1" />
@@ -63,13 +63,26 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
                     <div className="w-full h-full flex items-center justify-center bg-zinc-900 text-zinc-600"><User size={40}/></div>
                   )}
                </div>
+
+               {/* 姓名與年齡 */}
                <div className="pb-1 min-w-0 flex-1">
-                  <h2 className="text-3xl font-black text-white italic truncate">
-                    {person?.full_name || person?.name || '---'}&nbsp;
-                  </h2>
-                   <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">
-                      {person?.birthday || 'RIDER'}
-                   </p>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {/* 移除 truncate，確保名稱不被切掉 */}
+                    <h2 className="text-3xl font-black text-white italic whitespace-nowrap">
+                      {person?.full_name || person?.name || '---'}
+                    </h2>
+                    
+                    {/* AGE 標籤：仿照截圖中的深色 Badge 樣式 */}
+                    <div className="bg-zinc-800/80 backdrop-blur-sm border border-white/10 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-lg">
+                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">AGE</span>
+                        <span className="text-sm font-black text-white font-mono leading-none">
+                            {person?.birthday ? (
+                                // 如果你有年齡計算邏輯可以放在這，目前先保留原本的欄位顯示
+                                person.birthday 
+                            ) : '-'}
+                        </span>
+                    </div>
+                  </div>
                </div>
             </div>
          </div>
@@ -95,7 +108,7 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
       <section className="space-y-4">
           <div className="text-[10px] font-black text-zinc-600 tracking-[0.3em] uppercase">Switch Rider</div>
           <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4">
-                            {people.filter((p:any) => !p.is_hidden && !hasRole(p, ROLES.DEV)).map((p: any) => (
+              {people.filter((p:any) => !p.is_hidden && !hasRole(p, ROLES.DEV)).map((p: any) => (
                   <button 
                     key={p.id} 
                     onClick={() => onSelectPerson(p.id)}
