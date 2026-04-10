@@ -1,4 +1,5 @@
 import webpush from 'web-push';
+import { Buffer } from 'node:buffer'; // ⚠️ 重要：Cloudflare Worker 依賴這個來處理 web-push 的加密
 
 const TEAM_ID = 1;
 
@@ -8,9 +9,7 @@ export async function sendPushToRole(env, role, title, body, url = "/") {
     webpush.setVapidDetails(env.VAPID_SUBJECT || 'mailto:admin@chiachia.com', env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
     
     let query = `SELECT * FROM PushSubscriptions WHERE people_id IN (SELECT id FROM People WHERE team_id = ${TEAM_ID}`;
-    if (role !== 'all') {
-        query += ` AND roles LIKE '%"${role}"%'`; 
-    }
+    if (role !== 'all') query += ` AND roles LIKE '%"${role}"%'`; 
     query += ")";
 
     const { results } = await getDB().prepare(query).all();
@@ -56,38 +55,27 @@ export async function sendPushToParticipants(env, entityId, type, title, body, u
 
     if (peopleIds.length === 0) return;
 
-    // Deduplicate
     const uniqueIds = [...new Set(peopleIds)];
     const dbStatements = [];
     for (const pid of uniqueIds) {
-        dbStatements.push(
-            getDB().prepare(
-                `INSERT INTO SystemNotifications (team_id, user_id, title, action_link) VALUES (1, ?, ?, ?)`
-            ).bind(pid, title, url)
-        );
+        dbStatements.push(getDB().prepare(`INSERT INTO SystemNotifications (team_id, user_id, title, action_link) VALUES (1, ?, ?, ?)`).bind(pid, title, url));
     }
 
     if (dbStatements.length > 0) {
-        try {
-            await getDB().batch(dbStatements);
-        } catch (dbError) {
-            console.error("[DB Batch Error] 通知寫入失敗:", dbError);
-        }
+        try { await getDB().batch(dbStatements); } 
+        catch (dbError) { console.error("[DB Batch Error] 通知寫入失敗:", dbError); }
     }
 
     const pushPromises = uniqueIds.map(pid => 
-        sendPushToUser(env, pid, title, body, url).catch(err => {
-            console.error(`[Push Error] 發送給 User ${pid} 失敗:`, err);
-        })
+        sendPushToUser(env, pid, title, body, url).catch(err => { console.error(`[Push Error] 發送給 User ${pid} 失敗:`, err); })
     );
 
     await Promise.all(pushPromises);
 }
 
 export async function createNotification(db, userId, title, actionLink) {
-    try {
-        await db.prepare(`INSERT INTO SystemNotifications (team_id, user_id, title, action_link) VALUES (?, ?, ?, ?)`).bind(TEAM_ID, userId, title, actionLink).run();
-    } catch (e) { console.error("Create Notification Error:", e); }
+    try { await db.prepare(`INSERT INTO SystemNotifications (team_id, user_id, title, action_link) VALUES (?, ?, ?, ?)`).bind(TEAM_ID, userId, title, actionLink).run(); } 
+    catch (e) { console.error("Create Notification Error:", e); }
 }
 
 export async function createNotificationForRole(db, role, title, actionLink) {
