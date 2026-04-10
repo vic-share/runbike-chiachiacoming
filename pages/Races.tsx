@@ -8,7 +8,6 @@ import { format, subDays, addDays, subMonths, addMonths, isAfter, parseISO, isWi
 import { SimpleImageCropper } from '../components/SimpleImageCropper';
 import { hasRole, hasPermission, ROLES, PERMISSIONS } from '../utils/auth';
 
-// Canvas Crop Utility
 async function getCroppedImg(imageSrc: string, pixelCrop: any): Promise<Blob> {
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
@@ -55,14 +54,13 @@ interface RacesProps {
 }
 
 const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialExpandedEventId, raceEvents = [] }) => {
-  const [loading, setLoading] = useState(false); // Kept for async operations like uploading
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
   
   const [expandedEventId, setExpandedEventId] = useState<string | number | null>(initialExpandedEventId);
   const [noteModal, setNoteModal] = useState<{show: boolean, text: string}>({ show: false, text: '' });
   
-  // Date Range State
   const [dateRangeMode, setDateRangeMode] = useState<'1W' | '1M' | '3M' | 'ALL' | 'PICK'>('1M');
   const [customDateRange, setCustomDateRange] = useState<{start: string, end: string}>({
       start: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
@@ -73,8 +71,8 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   const [tab, setTab] = useState<'all' | 'joined' | 'open' | 'finished'>('all');
   const [selectedSeries, setSelectedSeries] = useState<string>('all');
 
-  // 🟢 分頁狀態：預設顯示 20 筆
-  const [displayCount, setDisplayCount] = useState(20);
+  // 🟢 分頁狀態：預設顯示 10 場賽事
+  const [displayCount, setDisplayCount] = useState(10);
   
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -126,7 +124,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
           setTab('all');
           setDateRangeMode('ALL');
           setExpandedEventId(initialExpandedEventId);
-          // 🟢 確保跳轉到的賽事有被渲染，給予足夠的 displayCount
+          // 確保跳到的賽事不會被分頁過濾掉
           setDisplayCount(prev => Math.max(prev, 100));
           
           setTimeout(() => {
@@ -140,10 +138,10 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       }
   }, [initialExpandedEventId, raceEvents.length]);
 
-  // 🟢 當篩選條件改變時，重置顯示數量
+  // 🟢 當條件切換時，重置顯示 10 場
   useEffect(() => {
-      setDisplayCount(20);
-  }, [tab, dateRangeMode, search, selectedSeries, customDateRange]);
+      setDisplayCount(10);
+  }, [tab, search, selectedSeries, dateRangeMode, customDateRange]);
 
   const handleCreate = async () => {
       if (!createForm.name || !createForm.date) return;
@@ -428,7 +426,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   };
 
   const handleShareEvent = async (event: RaceEvent) => {
-      // 1. Get Footer
       let footerText = "";
       try {
           const templates = await api.fetchPushTemplates();
@@ -437,11 +434,9 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
           console.error("Failed to fetch share footer", e);
       }
 
-      // 2. Check Past
       const eDate = parseISO(event.date);
       const isPast = !isAfter(eDate, subDays(new Date(), 1));
 
-      // 3. Build Text
       let text = `🏆 ${event.name}\n`;
       text += `📅 ${event.date} 📍 ${event.location || 'TBA'}\n\n`;
       
@@ -453,9 +448,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
           if (isPast) {
               const rank = p.race_group ? `🏆 ${p.race_group}` : '';
               const score = p.value ? `⏱ ${p.value}` : '';
-              // Only add parentheses if there is rank or score
               if (rank || score) {
-                  // trim ensures space management if one is missing
                   text += ` (${rank} ${score})`.replace('  ', ' '); 
               }
           }
@@ -466,7 +459,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
           text += `\n${footerText}`;
       }
 
-      // 4. Share
       if (navigator.share) {
           try {
               await navigator.share({
@@ -501,7 +493,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       }
   };
 
-  const filteredEvents = useMemo(() => {
+  const sortedEvents = useMemo(() => {
       const today = new Date();
       today.setHours(0,0,0,0);
       const currentUserId = user ? String(user.id) : null;
@@ -572,8 +564,8 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       });
   }, [raceEvents, tab, dateRangeMode, search, selectedSeries, user, customDateRange]);
 
-  // 🟢 取得分頁後的資料
-  const visibleEvents = useMemo(() => filteredEvents.slice(0, displayCount), [filteredEvents, displayCount]);
+  // 🟢 取得分頁後的 10 場賽事
+  const visibleEvents = useMemo(() => sortedEvents.slice(0, displayCount), [sortedEvents, displayCount]);
 
   const isRiderMode = !canManage;
   const selectablePeople = useMemo(() => {
@@ -589,7 +581,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   useEffect(() => {
     const fetchTitles = async () => {
       const newTitles = {};
-      for (const event of filteredEvents) {
+      for (const event of visibleEvents) {
         if (event.location && event.location.startsWith('http') && !urlTitles[event.location]) {
           try {
             const response = await fetch(`https://runbike-chiachiacoming.sky070680.workers.dev/api/url-title?url=${encodeURIComponent(event.location)}`);
@@ -610,10 +602,10 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       }
     };
 
-    if (filteredEvents.length > 0) {
+    if (visibleEvents.length > 0) {
       fetchTitles();
     }
-  }, [filteredEvents]);
+  }, [visibleEvents]);
 
   const paddingTopClass = isFilterExpanded ? 'pt-[270px]' : 'pt-[110px]';
 
@@ -631,7 +623,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   return (
     <>
       <div className="h-full bg-black relative">
-        {/* HUD Header */}
         <div className="absolute top-0 left-0 right-0 z-40 bg-zinc-950/90 backdrop-blur-3xl border-b border-white/5 shadow-2xl transition-all">
            <div className="px-4 py-4 space-y-3 max-w-md mx-auto">
                <div className="flex justify-between items-center">
@@ -642,7 +633,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                     </div>
                   </div>
                   
-                  {/* Toggle Button */}
                   <div className="flex items-center gap-2">
                       {canManage && (
                           <button onClick={() => openCreateModal()} className="w-10 h-10 rounded-xl bg-chiachia-green text-black flex items-center justify-center shadow-glow-green active:scale-90 transition-all">
@@ -658,17 +648,13 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                   </div>
                </div>
                
-               {/* Collapsible Filter Section */}
                <div className={`transition-all duration-300 ease-in-out space-y-3 ${isFilterExpanded ? 'max-h-[300px] pb-2 opacity-100' : 'max-h-0 pb-0 opacity-0 overflow-hidden'} ${isDateMenuOpen ? 'overflow-visible' : 'overflow-hidden'}`}>
-                   {/* Search Input */}
                    <div className="bg-zinc-900/40 rounded-xl flex items-center px-3 border border-white/5 focus-within:border-chiachia-green/40 transition-all h-10">
                        <Search size={14} className="text-zinc-600 shrink-0"/>
                        <input type="text" placeholder="搜尋賽事..." value={search} onChange={e => setSearch(e.target.value)} className="w-full bg-transparent border-none text-white text-[13px] outline-none placeholder:text-zinc-700 ml-2"/>
                    </div>
 
-                   {/* Filters Row */}
                    <div className="grid grid-cols-2 gap-2">
-                       {/* Series Select */}
                        <div className="relative flex items-center px-3 bg-zinc-900/40 rounded-xl border border-white/5 h-10">
                           <select 
                               value={selectedSeries} 
@@ -681,7 +667,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                           <ChevronDown size={12} className={`absolute right-3 pointer-events-none transition-colors ${selectedSeries !== 'all' ? 'text-chiachia-green' : 'text-zinc-600'}`} />
                        </div>
 
-                       {/* Date Range Select */}
                        <div className="relative z-50">
                            <button 
                                onClick={() => setIsDateMenuOpen(!isDateMenuOpen)}
@@ -696,7 +681,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                                <ChevronDown size={12} className={`shrink-0 transition-transform ${isDateMenuOpen ? 'rotate-180' : ''}`} />
                            </button>
 
-                           {/* Dropdown Menu */}
                            {isDateMenuOpen && (
                                <div className="absolute top-full right-0 mt-2 w-48 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-2 z-[60] flex flex-col gap-1 animate-scale-in origin-top-right">
                                    <div className="grid grid-cols-2 gap-1 mb-1">
@@ -734,7 +718,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                        </div>
                    </div>
 
-                   {/* Tabs */}
                    <div className="flex bg-zinc-900/60 p-1 rounded-xl h-9 w-full">
                        {(['all', 'joined', 'open', 'finished'] as const).map(t => (
                            <button 
@@ -757,9 +740,9 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                    <Loader2 className="animate-spin text-chiachia-green/40" size={24} />
                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-700">Syncing Arena</span>
                </div>
-           ) : filteredEvents.length > 0 ? (
+           ) : sortedEvents.length > 0 ? (
                <>
-                   {/* 🟢 使用 visibleEvents 渲染 */}
+                   {/* 🟢 這裡替換成 visibleEvents (只渲染 10 場) */}
                    {visibleEvents.map(event => {
                        const eDate = parseISO(event.date);
                        const isPast = !isAfter(eDate, subDays(new Date(), 1));
@@ -930,14 +913,14 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                           </div>
                        );
                    })}
-                   
-                   {/* 🟢 載入更多按鈕 */}
-                   {filteredEvents.length > displayCount && (
+
+                   {/* 🟢 載入更多賽事的按鈕 */}
+                   {sortedEvents.length > displayCount && (
                        <button 
-                            onClick={() => setDisplayCount(prev => prev + 20)}
+                            onClick={() => setDisplayCount(prev => prev + 10)}
                             className="w-full py-5 rounded-[28px] border border-white/5 bg-zinc-950/40 text-zinc-500 text-xs font-black uppercase tracking-[0.3em] flex items-center justify-center gap-3 active:scale-[0.98] transition-all hover:text-white hover:bg-zinc-900"
                        >
-                            載入更多賽事 ({filteredEvents.length - displayCount}) <Plus size={16}/>
+                            載入更早賽事 ({sortedEvents.length - displayCount}) <Plus size={16}/>
                        </button>
                    )}
                </>

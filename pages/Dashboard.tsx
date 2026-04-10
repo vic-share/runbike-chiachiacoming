@@ -7,7 +7,6 @@ import { SimpleComposedChart } from '../components/SimpleComposedChart';
 import { ForecastItem } from '../components/ForecastItem';
 import { format, parseISO, isAfter, subDays, subMonths, isWithinInterval, startOfDay, endOfDay, isValid } from 'date-fns';
 
-// 1. Hall of Fame Ticker (Rhythmic Switch)
 const HallOfFameTicker = ({ items }: { items: LegendRecord[] }) => {
     if (items.length === 0) return null;
 
@@ -21,7 +20,7 @@ const HallOfFameTicker = ({ items }: { items: LegendRecord[] }) => {
             setTimeout(() => {
                 setCurrentIndex(prev => (prev + 1) % items.length);
                 setFadeState('in');
-            }, 500); // 0.5s fade out duration
+            }, 500);
         }, 4000);
         return () => clearInterval(interval);
     }, [items.length]);
@@ -31,15 +30,11 @@ const HallOfFameTicker = ({ items }: { items: LegendRecord[] }) => {
 
     return (
         <div className="w-full h-24 relative flex items-center">
-            <div 
-                className={`w-full flex items-center gap-4 transition-all duration-500 ease-in-out ${fadeState === 'in' ? 'opacity-100 scale-100 blur-0' : 'opacity-0 scale-95 blur-sm'}`}
-            >
-                {/* Avatar */}
+            <div className={`w-full flex items-center gap-4 transition-all duration-500 ease-in-out ${fadeState === 'in' ? 'opacity-100 scale-100 blur-0' : 'opacity-0 scale-95 blur-sm'}`}>
                 <div className="w-16 h-16 rounded-full border-2 border-amber-500/50 overflow-hidden flex-shrink-0 bg-black shadow-glow-gold relative z-10">
                     {item.avatar_url ? <img src={item.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-zinc-800"/>}
                 </div>
                 
-                {/* Content Grid */}
                 <div className="flex-1 min-w-0 flex items-center gap-4">
                     <div className="flex flex-col justify-center min-w-0">
                         <span className="text-xl font-black text-white truncate italic tracking-tight">{item.name}</span>
@@ -48,7 +43,6 @@ const HallOfFameTicker = ({ items }: { items: LegendRecord[] }) => {
                         </span>
                     </div>
 
-                    {/* Ranking (Moved to Far Right & Prominent) */}
                     <div className="ml-auto flex items-center">
                         {item.ranking && (
                             <span className="text-3xl font-black text-amber-500 italic tracking-tighter drop-shadow-glow flex items-center gap-1">
@@ -63,7 +57,6 @@ const HallOfFameTicker = ({ items }: { items: LegendRecord[] }) => {
     );
 };
 
-// 2. Forecast Ticker (Updated Location & Styles)
 const ForecastTicker = ({ items, onNavigate, raceGroups }: { items: any[], onNavigate: (id: string|number) => void, raceGroups: LookupItem[] }) => {
     const limitedItems = useMemo(() => items.slice(0, 3), [items]);
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -85,7 +78,7 @@ const ForecastTicker = ({ items, onNavigate, raceGroups }: { items: any[], onNav
             const timer = setTimeout(() => {
                 setIsTransitioning(false);
                 setCurrentIndex(0);
-            }, 500); // Match transition duration
+            }, 500);
             return () => clearTimeout(timer);
         }
     }, [currentIndex, limitedItems.length]);
@@ -116,7 +109,6 @@ const ForecastTicker = ({ items, onNavigate, raceGroups }: { items: any[], onNav
 };
 
 const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, raceGroups, onNavigateToTraining, defaultTrainingType, people, legends = [], forecast = [] }) => {
-  // Trend State
   const [trendType, setTrendType] = useState<string | number>(defaultTrainingType);
   const [trendDateRange, setTrendDateRange] = useState<'1W' | '1M' | '3M' | 'ALL' | 'PICK'>('1M');
   const [customDateRange, setCustomDateRange] = useState<{start: string, end: string}>({
@@ -125,10 +117,9 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
   });
   const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
   
-  // 🟢 分頁狀態：預設顯示 20 筆
-  const [displayCount, setDisplayCount] = useState(20);
+  // 🟢 控制一次顯示幾個「日子」
+  const [displayCount, setDisplayCount] = useState(10);
   
-  // Modal State for Trend Analysis
   const [trendModal, setTrendModal] = useState<{ show: boolean, data: any | null }>({ show: false, data: null });
 
   const calculateStability = (values: number[]) => {
@@ -151,12 +142,11 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
       }
   }, [trainingTypes]);
 
-  // 🟢 當篩選條件改變時，重置顯示數量
+  // 🟢 當篩選條件改變時，把顯示天數重置回 10
   useEffect(() => {
-      setDisplayCount(20);
+      setDisplayCount(10);
   }, [trendType, trendDateRange, customDateRange]);
 
-  // Process Trend Data
   const trendData = useMemo(() => {
       let typeId = trendType;
       if (typeof trendType === 'string') {
@@ -227,11 +217,11 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
       });
   }, [data, trendType, trendDateRange, customDateRange, trainingTypes, people]);
 
-  // 🟢 取得分頁後的資料
+  // 🟢 根據 displayCount 截取前 N 個日子
   const visibleTrendData = useMemo(() => trendData.slice(0, displayCount), [trendData, displayCount]);
 
   const handleJumpToRider = (riderId: string, date: string) => {
-      setTrendModal({ show: false, data: null }); // Close modal
+      setTrendModal({ show: false, data: null });
       if (onNavigateToTraining) {
           onNavigateToTraining(riderId, date);
       }
@@ -276,24 +266,20 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
   const handleDownloadCSV = () => {
       if (!trendModal.data) return;
 
-      // Find Item Name
       let typeName = 'Training';
       if (trainingTypes && trendType) {
           const t = trainingTypes.find((t: any) => String(t.id) === String(trendType) || t.name === trendType || t.type_name === trendType);
           if (t) typeName = t.name || t.type_name;
       }
 
-      // Max columns needed
       let maxScores = 0;
       trendModal.data.riders.forEach((r: any) => {
           if (r.rawScores && r.rawScores.length > maxScores) maxScores = r.rawScores.length;
       });
 
-      // Headers
       const headers = ['Date', 'Name', 'null', 'null'];
       for (let i = 1; i <= maxScores; i++) headers.push(`Score${i}`);
 
-      // Rows
       const rows = trendModal.data.riders.map((r: any) => {
           const row = [
               trendModal.data.date,
@@ -307,12 +293,10 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
 
       const csvContent = "\uFEFF" + [headers.join(','), ...rows].join('\n');
       
-      // Filename: YYYYMMDD_ItemName_report.csv
       const dateStr = trendModal.data.date.replace(/-/g, '');
       const safeName = typeName.replace(/[\/\\:*?"<>|]/g, '_');
       const filename = `${dateStr}_${safeName}_report.csv`;
 
-      // Trigger download
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -342,7 +326,6 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
 
   return (
     <div className="h-full overflow-y-auto px-4 py-6 space-y-8 animate-fade-in no-scrollbar pb-28">
-      {/* 賽事預報 */}
       <section className="space-y-4">
         <div className="flex justify-between items-end">
           <div className="flex flex-col">
@@ -355,7 +338,6 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
         <ForecastTicker items={forecast} onNavigate={onNavigateToRaces} raceGroups={raceGroups} />
       </section>
 
-      {/* Global Hall of Fame */}
       <section className="relative">
          <div className="flex flex-col mb-4">
             <h2 className="text-xs font-black text-zinc-600 tracking-[0.3em] uppercase">Hall of Fame</h2>
@@ -375,14 +357,12 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
          </div>
       </section>
 
-      {/* 訓練趨勢分析 (Trend Analysis) */}
       <section className="space-y-4">
          <div className="flex flex-col">
             <h2 className="text-xs font-black text-zinc-600 tracking-[0.3em] uppercase">Training Insights</h2>
             <div className="text-2xl font-black text-white italic tracking-tight">訓練趨勢分析</div>
          </div>
 
-         {/* Filters */}
          <div className="flex justify-between items-center gap-2">
              <div className="relative flex-1">
                  <select value={trendType} onChange={e => setTrendType(e.target.value)} className="w-full bg-zinc-900 border border-white/10 text-white text-xs font-black uppercase tracking-wider rounded-xl px-3 py-2.5 pr-8 outline-none appearance-none h-10"> 
@@ -391,7 +371,6 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
                  <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"/>
              </div>
              
-             {/* New Collapsible Date Filter */}
              <div className="relative flex-1 max-w-[160px] z-50">
                  <button 
                      onClick={() => setIsDateMenuOpen(!isDateMenuOpen)}
@@ -406,7 +385,6 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
                      <ChevronDown size={12} className={`shrink-0 transition-transform ${isDateMenuOpen ? 'rotate-180' : ''}`} />
                  </button>
 
-                 {/* Dropdown Menu */}
                  {isDateMenuOpen && (
                      <div className="absolute top-full right-0 mt-2 w-48 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-2 z-[60] flex flex-col gap-1 animate-scale-in origin-top-right">
                          <div className="grid grid-cols-2 gap-1 mb-1">
@@ -444,15 +422,14 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
              </div>
          </div>
 
-         {/* Daily Cards */}
          <div className="space-y-6">
+             {/* 🟢 這裡替換成 visibleTrendData (只渲染 10 個日子) */}
              {visibleTrendData.map((dayData, idx) => (
                  <button 
                     key={dayData.date} 
                     onClick={() => openTrendModal(dayData)}
                     className="w-full text-left glass-card rounded-[24px] p-5 border-white/5 relative overflow-hidden group transition-all active:scale-[0.98] focus:outline-none"
                  >
-                     {/* Date Header */}
                      <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
                          <div className="flex items-center gap-3">
                              <div className="w-1.5 h-10 bg-chiachia-green rounded-full shadow-glow-green"></div>
@@ -467,7 +444,6 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
                          </div>
                      </div>
 
-                     {/* Chart Preview */}
                      <div className="h-44 w-full mb-2 bg-black/20 rounded-xl border border-white/5 p-2 pointer-events-none">
                          <SimpleComposedChart 
                              data={dayData.riders} 
@@ -484,13 +460,13 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
                  </button>
              ))}
 
-             {/* 🟢 載入更多按鈕 */}
+             {/* 🟢 載入更多日期的按鈕 */}
              {trendData.length > displayCount && (
                  <button 
-                    onClick={() => setDisplayCount(prev => prev + 20)}
-                    className="w-full py-4 rounded-2xl border border-white/10 bg-zinc-900/50 text-zinc-400 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all hover:bg-zinc-800 hover:text-white"
+                    onClick={() => setDisplayCount(prev => prev + 10)}
+                    className="w-full py-4 rounded-[20px] border border-white/10 bg-zinc-900/50 text-zinc-400 text-xs font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 active:scale-95 transition-all hover:bg-zinc-800 hover:text-white"
                  >
-                    載入更多日期 ({trendData.length - displayCount}) <ChevronDown size={14}/>
+                    載入更早的日期 ({trendData.length - displayCount}) <ChevronDown size={16}/>
                  </button>
              )}
 
@@ -503,24 +479,19 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
          </div>
       </section>
 
-      {/* Trend Detail Modal */}
       {trendModal.show && trendModal.data && createPortal(
           <div className="fixed inset-0 z-[60000] flex flex-col bg-zinc-950 animate-slide-up">
-              {/* Header - Increased top padding and reordered elements */}
               <div className="flex-none flex items-center justify-between px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] border-b border-white/5 bg-zinc-950/90 backdrop-blur-md relative z-10 shadow-2xl">
                   
-                  {/* Left: Close Button (Primary Action for navigation) */}
                   <button onClick={() => setTrendModal({ show: false, data: null })} className="w-12 h-12 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 active:bg-zinc-800 transition-all border border-white/5 shadow-lg active:scale-95 hover:text-white">
                       <X size={20}/>
                   </button>
 
-                  {/* Center: Title */}
                   <div className="flex flex-col items-center">
                       <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{format(parseISO(trendModal.data.date), 'yyyy.MM.dd')}</div>
                       <h3 className="text-lg font-black text-white italic tracking-wider">DAILY REPORT</h3>
                   </div>
 
-                  {/* Right: Actions */}
                   <div className="flex items-center gap-2">
                       <button onClick={handleShareText} className="w-12 h-12 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 active:bg-zinc-800 transition-all border border-white/5 shadow-lg active:scale-95 hover:text-white">
                           <Share2 size={20}/>
@@ -532,15 +503,12 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
               </div>
 
               <div className="flex-1 overflow-y-auto no-scrollbar pb-[env(safe-area-inset-bottom)]">
-                  {/* Scrollable Chart Area */}
                   <div className="p-4 border-b border-white/5 bg-zinc-900/30">
                       <div className="text-xs text-zinc-500 font-black uppercase tracking-widest mb-2 flex justify-between">
                           <span>Performance Overview</span>
                           <span className="text-chiachia-green flex items-center gap-1"><Maximize2 size={12}/> Scroll to Move</span>
                       </div>
-                      {/* Horizontal Scroll Container for Chart */}
                       <div className="w-full overflow-x-auto no-scrollbar pb-2">
-                          {/* Force width calculation to ensure scroll capability */}
                           {(() => {
                               const chartWidth = Math.max(window.innerWidth - 48, trendModal.data.riders.length * 80);
                               return (
@@ -563,7 +531,6 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
                       </div>
                   </div>
 
-                  {/* Rider Data Cards */}
                   <div className="p-4 space-y-3 pb-24">
                       <div className="text-xs text-zinc-500 font-black uppercase tracking-widest mb-1">Rider Details ({trendModal.data.riders.length})</div>
                       {trendModal.data.riders.map((rider: any) => (

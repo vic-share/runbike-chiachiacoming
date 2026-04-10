@@ -8,21 +8,19 @@ import { hasRole, ROLES } from '../utils/auth';
 
 const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refreshData, activePersonId, onSelectPerson, onNavigateToTraining }) => {
   const [uploading, setUploading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState(''); // 搜尋關鍵字狀態
+  const [searchTerm, setSearchTerm] = useState(''); 
 
-  // 🟢 分頁狀態：預設顯示 20 筆
-  const [displayCount, setDisplayCount] = useState(20);
+  // 🟢 控制一次顯示幾個「獨立日子」
+  const [displayCount, setDisplayCount] = useState(10);
 
   const person = useMemo(() => people.find((p: any) => String(p.id) === String(activePersonId)), [people, activePersonId]);
-  
   const personalData = useMemo(() => data.filter((d: any) => String(d.people_id) === String(activePersonId)), [data, activePersonId]);
 
   // 🟢 當切換選手時重置分頁
   useEffect(() => {
-    setDisplayCount(20);
+    setDisplayCount(10);
   }, [activePersonId]);
 
-  // 動態搜尋邏輯
   const filteredRiders = useMemo(() => {
     const riders = people.filter((p: any) => !p.is_hidden && !hasRole(p, ROLES.DEV));
     if (!searchTerm.trim()) return riders;
@@ -60,9 +58,21 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
     }
   };
 
+  // 🟢 精準提取 10 個日子，並篩選出只屬於這 10 天的數據
+  const visiblePersonalData = useMemo(() => {
+      // 1. 取得所有獨立的日期（依新舊排列）
+      const uniqueDates = Array.from(new Set(personalData.map((d: any) => d.date)));
+      // 2. 截取前 N 個日子
+      const visibleDatesSet = new Set(uniqueDates.slice(0, displayCount));
+      // 3. 過濾出屬於這些日子的完整數據 (一天可能有多筆)
+      return personalData.filter((d: any) => visibleDatesSet.has(d.date));
+  }, [personalData, displayCount]);
+
+  // 為了按鈕計算「還剩幾個日子」
+  const totalUniqueDatesCount = new Set(personalData.map((d: any) => d.date)).size;
+
   return (
     <div className="h-full overflow-y-auto px-4 py-6 space-y-8 no-scrollbar pb-28">
-      {/* Profile Header - 名稱不截斷 + AGE 極致右推 */}
       <section className="relative">
          <div className="aspect-[4/5] rounded-[32px] bg-zinc-900 overflow-hidden relative border border-white/5">
             {person?.b_url ? (
@@ -73,7 +83,6 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
             
             <div className="absolute bottom-6 left-6 right-6 flex items-end gap-4">
-               {/* 大頭貼 */}
                <div className="w-24 h-24 rounded-3xl border-2 border-chiachia-green bg-zinc-950 shadow-glow-green overflow-hidden relative shrink-0">
                   {person?.s_url ? (
                     <img src={person.s_url.split('#')[0]} className="w-full h-full object-contain p-1" />
@@ -82,17 +91,14 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
                   )}
                </div>
 
-               {/* 資訊區塊：使用 w-full 撐開 */}
                <div className="pb-1 min-w-0 flex-1">
                   <div className="flex justify-between items-center w-full">
-                    {/* 名字區塊：移除 truncate 確保完整顯示，使用 break-words 預防超長名字 */}
                     <div className="flex-1 min-w-0 pr-2">
                         <h2 className="text-3xl font-black text-white italic leading-tight break-words">
                         {person?.full_name || person?.name || '---'}
                         </h2>
                     </div>
                     
-                    {/* AGE 標籤：使用 shrink-0 防止被擠壓，並靠右顯示 */}
                     <div className="bg-zinc-800/90 backdrop-blur-sm border border-white/10 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-xl shrink-0 ml-auto">
                         <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">AGE</span>
                         <span className="text-sm font-black text-white font-mono leading-none">
@@ -105,7 +111,6 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
          </div>
       </section>
 
-      {/* Stats Overview */}
       <div className="grid grid-cols-2 gap-4">
           <div className="glass-card p-5 rounded-3xl space-y-1">
               <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5"><Activity size={12} className="text-chiachia-green"/> Training</div>
@@ -121,11 +126,9 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
           </div>
       </div>
 
-      {/* 選手選擇與搜尋區塊 */}
       <section className="space-y-4">
           <div className="text-[10px] font-black text-zinc-600 tracking-[0.3em] uppercase px-1">選擇</div>
           
-          {/* 動態搜尋框 */}
           <div className="relative group mx-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-chiachia-green transition-colors" size={18} />
               <input 
@@ -166,13 +169,12 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
           </div>
       </section>
 
-      {/* Recent Activity Mini List */}
       <section className="space-y-4">
           <div className="text-[10px] font-black text-zinc-600 tracking-[0.3em] uppercase">歷程紀錄</div>
           <div className="space-y-2">
-              {/* 🟢 使用 displayCount 控制顯示筆數 */}
-              {personalData.slice(0, displayCount).map((rec: any, i: number) => (
-                  <div key={i} className="glass-card p-4 rounded-2xl flex justify-between items-center border-white/5">
+              {/* 🟢 使用篩選過 10 個日期的 visiblePersonalData */}
+              {visiblePersonalData.map((rec: any, i: number) => (
+                  <div key={`${rec.id}-${i}`} className="glass-card p-4 rounded-2xl flex justify-between items-center border-white/5">
                       <div className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${rec.item === 'training' ? 'bg-chiachia-green/10 text-chiachia-green' : 'bg-amber-400/10 text-amber-400'}`}>
                              {rec.item === 'training' ? <Activity size={16}/> : <Trophy size={16}/>}
@@ -188,13 +190,13 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
                   </div>
               ))}
 
-              {/* 🟢 載入更多按鈕 */}
-              {personalData.length > displayCount && (
+              {/* 🟢 載入更多按鈕 (以「日子」為單位計算) */}
+              {totalUniqueDatesCount > displayCount && (
                   <button 
-                    onClick={() => setDisplayCount(prev => prev + 20)}
-                    className="w-full py-4 mt-2 rounded-2xl border border-white/10 bg-zinc-900/50 text-zinc-400 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
+                    onClick={() => setDisplayCount(prev => prev + 10)}
+                    className="w-full py-4 mt-4 rounded-2xl border border-white/10 bg-zinc-900/50 text-zinc-400 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 hover:bg-zinc-800 transition-all"
                   >
-                    顯示更多紀錄 ({personalData.length - displayCount}) <ChevronDown size={14}/>
+                    載入更早的日期 ({totalUniqueDatesCount - displayCount} days) <ChevronDown size={14}/>
                   </button>
               )}
           </div>
