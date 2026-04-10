@@ -1,4 +1,4 @@
-import { sendPushToRole } from '../services/push.js';
+import { sendPushToRole, createNotificationForRole } from '../services/push.js';
 
 export const handleNotifications = async ({ request, env, url, path, method, getDB, TEAM_ID, corsHeaders }) => {
     if (path === "/api/notifications/unread-count") {
@@ -28,9 +28,10 @@ export const handleNotifications = async ({ request, env, url, path, method, get
     }
 
     if (path === "/api/admin/push" && method === "POST") { 
-        // 🚨 修正：前端傳來的參數是 url，不是 action_url
+        // 🚨 修正：確保前端傳來的 url 正確對應，並補回寫入資料庫的邏輯
         const { title, body, url: targetUrl, target_role } = await request.json(); 
         const count = await sendPushToRole(env, target_role || 'all', title, body, targetUrl); 
+        await createNotificationForRole(getDB(), target_role || 'all', title, targetUrl); // 補回這行：寫入鈴鐺通知
         return Response.json({ success: true, sent_count: count }, { headers: corsHeaders }); 
     }
     if (path === "/api/subscribe" && method === "POST") { 

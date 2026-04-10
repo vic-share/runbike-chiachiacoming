@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../services/api';
@@ -73,6 +72,9 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
 
   const [tab, setTab] = useState<'all' | 'joined' | 'open' | 'finished'>('all');
   const [selectedSeries, setSelectedSeries] = useState<string>('all');
+
+  // 🟢 分頁狀態：預設顯示 20 筆
+  const [displayCount, setDisplayCount] = useState(20);
   
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -124,6 +126,8 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
           setTab('all');
           setDateRangeMode('ALL');
           setExpandedEventId(initialExpandedEventId);
+          // 🟢 確保跳轉到的賽事有被渲染，給予足夠的 displayCount
+          setDisplayCount(prev => Math.max(prev, 100));
           
           setTimeout(() => {
               const el = document.getElementById(`race-card-${initialExpandedEventId}`);
@@ -135,6 +139,11 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
           }, 500);
       }
   }, [initialExpandedEventId, raceEvents.length]);
+
+  // 🟢 當篩選條件改變時，重置顯示數量
+  useEffect(() => {
+      setDisplayCount(20);
+  }, [tab, dateRangeMode, search, selectedSeries, customDateRange]);
 
   const handleCreate = async () => {
       if (!createForm.name || !createForm.date) return;
@@ -563,6 +572,9 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       });
   }, [raceEvents, tab, dateRangeMode, search, selectedSeries, user, customDateRange]);
 
+  // 🟢 取得分頁後的資料
+  const visibleEvents = useMemo(() => filteredEvents.slice(0, displayCount), [filteredEvents, displayCount]);
+
   const isRiderMode = !canManage;
   const selectablePeople = useMemo(() => {
       return people.filter((p: any) => !p.is_hidden && p.role !== 'admin' && (p.roles?.includes(ROLES.RIDER) || p.roles?.includes(ROLES.AIDE))).sort((a:any, b:any) => a.name.localeCompare(b.name));
@@ -573,8 +585,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       const eDate = parseISO(showJoinModal.event.date);
       return !isAfter(eDate, subDays(new Date(), 1));
   }, [showJoinModal.event]);
-
-
 
   useEffect(() => {
     const fetchTitles = async () => {
@@ -748,180 +758,189 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-700">Syncing Arena</span>
                </div>
            ) : filteredEvents.length > 0 ? (
-               filteredEvents.map(event => {
-                   const eDate = parseISO(event.date);
-                   const isPast = !isAfter(eDate, subDays(new Date(), 1));
-                   const hasJoined = user && event.participants?.some(p => String(p.people_id || p.id) === String(user.id));
-                   const selfParticipant = hasJoined ? event.participants?.find(p => String(p.people_id || p.id) === String(user.id)) : undefined;
-                   const isExpanded = expandedEventId === event.id;
+               <>
+                   {/* 🟢 使用 visibleEvents 渲染 */}
+                   {visibleEvents.map(event => {
+                       const eDate = parseISO(event.date);
+                       const isPast = !isAfter(eDate, subDays(new Date(), 1));
+                       const hasJoined = user && event.participants?.some(p => String(p.people_id || p.id) === String(user.id));
+                       const selfParticipant = hasJoined ? event.participants?.find(p => String(p.people_id || p.id) === String(user.id)) : undefined;
+                       const isExpanded = expandedEventId === event.id;
 
-                   // [NEW] Visual state: if expanded, treat as active for colors
-                   const visualIsPast = isPast && !isExpanded;
+                       const visualIsPast = isPast && !isExpanded;
+                       const publicPhoto = event.url;
+                       const userPhoto = selfParticipant?.photo_url;
+                       const images = userPhoto ? [userPhoto, publicPhoto].filter(Boolean) : [publicPhoto].filter(Boolean);
+                       const seriesName = raceGroups.find((g: any) => String(g.id) === String(event.series_id))?.name || 'Standard';
 
-                   const publicPhoto = event.url;
-                   const userPhoto = selfParticipant?.photo_url;
-                   const images = userPhoto ? [userPhoto, publicPhoto].filter(Boolean) : [publicPhoto].filter(Boolean);
-                   
-                   const seriesName = raceGroups.find((g: any) => String(g.id) === String(event.series_id))?.name || 'Standard';
+                       const cardBorderClass = visualIsPast 
+                            ? 'border-white/5 bg-zinc-950/20' 
+                            : hasJoined 
+                                ? 'border-chiachia-green/30 bg-chiachia-green/5' 
+                                : 'border-white/5 bg-zinc-950/40';
+                       
+                       const grayscaleClass = visualIsPast ? 'opacity-60 grayscale' : '';
 
-                   // [Updated Style Logic] - Uses visualIsPast instead of isPast
-                   const cardBorderClass = visualIsPast 
-                        ? 'border-white/5 bg-zinc-950/20' 
-                        : hasJoined 
-                            ? 'border-chiachia-green/30 bg-chiachia-green/5' 
-                            : 'border-white/5 bg-zinc-950/40';
-                   
-                   const grayscaleClass = visualIsPast ? 'opacity-60 grayscale' : '';
-
-                   return (
-                      <div key={event.id} id={`race-card-${event.id}`} className="relative group animate-fade-in">
-                          <div className={`relative glass-card rounded-[28px] overflow-hidden border backdrop-blur-xl transition-all ${cardBorderClass} ${grayscaleClass} active:scale-[0.98] active:bg-zinc-800/50`} onClick={() => setExpandedEventId(isExpanded ? null : event.id)}>
-                              {/* ... (Images) ... */}
-                              {(images.length > 0) && (
-                                  <div className="absolute inset-0 z-0 flex overflow-x-auto snap-x snap-mandatory no-scrollbar">
-                                      {images.map((img, idx) => (
-                                          <div key={idx} className="w-full h-full shrink-0 snap-center relative">
-                                              <img src={img} className={`w-full h-full object-cover mask-gradient-to-t ${visualIsPast ? 'opacity-20' : 'opacity-60 brightness-110'}`} />
-                                              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent"></div>
+                       return (
+                          <div key={event.id} id={`race-card-${event.id}`} className="relative group animate-fade-in">
+                              <div className={`relative glass-card rounded-[28px] overflow-hidden border backdrop-blur-xl transition-all ${cardBorderClass} ${grayscaleClass} active:scale-[0.98] active:bg-zinc-800/50`} onClick={() => setExpandedEventId(isExpanded ? null : event.id)}>
+                                  {/* Images */}
+                                  {(images.length > 0) && (
+                                      <div className="absolute inset-0 z-0 flex overflow-x-auto snap-x snap-mandatory no-scrollbar">
+                                          {images.map((img, idx) => (
+                                              <div key={idx} className="w-full h-full shrink-0 snap-center relative">
+                                                  <img src={img} className={`w-full h-full object-cover mask-gradient-to-t ${visualIsPast ? 'opacity-20' : 'opacity-60 brightness-110'}`} />
+                                                  <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent"></div>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  )}
+                                  
+                                  <div className="flex gap-4 p-5 relative z-10 pr-12 pl-5 pointer-events-none"> 
+                                      <div className={`w-14 h-16 rounded-2xl flex flex-col items-center justify-center border transition-colors shrink-0 ${visualIsPast ? 'bg-zinc-900 border-white/5' : hasJoined ? 'bg-chiachia-green/10 border-chiachia-green/30' : 'bg-zinc-900 border-amber-500/20'}`}>
+                                          <span className={`text-[9px] font-black uppercase tracking-tighter ${visualIsPast ? 'text-zinc-600' : hasJoined ? 'text-chiachia-green' : 'text-amber-500'}`}>{format(eDate, 'MMM')}</span>
+                                          <span className="text-xl font-black text-white leading-none">{format(eDate, 'dd')}</span>
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 mb-1">
+                                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${hasJoined ? 'bg-chiachia-green text-black shadow-glow-green' : 'bg-zinc-800 text-zinc-500'}`}>
+                                                  {hasJoined ? 'JOINED' : isPast ? 'FINISHED' : 'OPEN'}
+                                              </span>
+                                              <span className="text-[9px] text-zinc-600 font-bold truncate tracking-widest uppercase">{seriesName}</span>
                                           </div>
-                                      ))}
-                                  </div>
-                              )}
-                              
-                              <div className="flex gap-4 p-5 relative z-10 pr-12 pl-5 pointer-events-none"> 
-                                  <div className={`w-14 h-16 rounded-2xl flex flex-col items-center justify-center border transition-colors shrink-0 ${visualIsPast ? 'bg-zinc-900 border-white/5' : hasJoined ? 'bg-chiachia-green/10 border-chiachia-green/30' : 'bg-zinc-900 border-amber-500/20'}`}>
-                                      <span className={`text-[9px] font-black uppercase tracking-tighter ${visualIsPast ? 'text-zinc-600' : hasJoined ? 'text-chiachia-green' : 'text-amber-500'}`}>{format(eDate, 'MMM')}</span>
-                                      <span className="text-xl font-black text-white leading-none">{format(eDate, 'dd')}</span>
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-1">
-                                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${hasJoined ? 'bg-chiachia-green text-black shadow-glow-green' : 'bg-zinc-800 text-zinc-500'}`}>
-                                              {hasJoined ? 'JOINED' : isPast ? 'FINISHED' : 'OPEN'}
-                                          </span>
-                                          <span className="text-[9px] text-zinc-600 font-bold truncate tracking-widest uppercase">{seriesName}</span>
+                                          <h3 className="text-md font-black text-white italic truncate tracking-tight">{event.name}</h3>
+                                          <div className="flex items-center gap-3 text-[10px] text-zinc-500 font-bold mt-1.5 relative z-20">
+                                              <button onClick={(e) => handleLocationClick(e, event.location || '')} className="flex items-center gap-1 hover:text-chiachia-green cursor-pointer pointer-events-auto">
+                                                  <MapPin size={10}/> <span className="underline decoration-zinc-700 underline-offset-2">{formatLocation(event.location)}</span>
+                                              </button>
+                                          </div>
                                       </div>
-                                      <h3 className="text-md font-black text-white italic truncate tracking-tight">{event.name}</h3>
-                                      <div className="flex items-center gap-3 text-[10px] text-zinc-500 font-bold mt-1.5 relative z-20">
-                                          <button onClick={(e) => handleLocationClick(e, event.location || '')} className="flex items-center gap-1 hover:text-chiachia-green cursor-pointer pointer-events-auto">
-                                              <MapPin size={10}/> <span className="underline decoration-zinc-700 underline-offset-2">{formatLocation(event.location)}</span>
-                                          </button>
-                                      </div>
+                                      {(!isPast || hasJoined || canManage) && (
+                                          <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 pointer-events-auto">
+                                              <button onClick={(e) => { e.stopPropagation(); if (isRiderMode && hasJoined) { handleExitRace(event.id, user.id); } else { openJoinModal(event, selfParticipant); } }} className={`p-3 rounded-xl transition-all shadow-lg border active:scale-95 ${hasJoined ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 'bg-white/10 border-white/20 text-white'}`}>
+                                                  {hasJoined ? <LogOut size={20} /> : <UserPlus size={20} />}
+                                              </button>
+                                          </div>
+                                      )}
                                   </div>
-                                  {(!isPast || hasJoined || canManage) && (
-                                      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 pointer-events-auto">
-                                          <button onClick={(e) => { e.stopPropagation(); if (isRiderMode && hasJoined) { handleExitRace(event.id, user.id); } else { openJoinModal(event, selfParticipant); } }} className={`p-3 rounded-xl transition-all shadow-lg border active:scale-95 ${hasJoined ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 'bg-white/10 border-white/20 text-white'}`}>
-                                              {hasJoined ? <LogOut size={20} /> : <UserPlus size={20} />}
-                                          </button>
+                                  
+                                  {/* Participants List */}
+                                  {isExpanded && (
+                                      <div className="border-t border-white/5 bg-zinc-900/30 backdrop-blur-sm px-4 py-4 space-y-3 relative z-20 animate-slide-down" onClick={(e) => e.stopPropagation()}>
+                                          <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 flex items-center justify-between">
+                                              <span>Participants ({event.participants?.length || 0})</span>
+                                              <div className="flex items-center gap-2">
+                                                  <button onClick={(e) => { e.stopPropagation(); handleShareEvent(event); }} className="flex items-center gap-1 px-2 py-1 bg-zinc-800 rounded-lg text-zinc-400 text-[9px] font-bold active:scale-95 transition-all hover:text-white">
+                                                      <Share2 size={10} /> 分享
+                                                  </button>
+                                                  {canManage && <button onClick={() => openCreateModal(event)} className="flex items-center gap-1 px-2 py-1 bg-zinc-800 rounded-lg text-zinc-400 text-[9px] font-bold active:scale-95 transition-all hover:text-white"><Edit2 size={10} /> 編輯</button>}
+                                              </div>
+                                          </div>
+                                          
+                                          <div className="grid grid-cols-1 gap-2">
+                                              {event.participants && event.participants.map((p) => {
+                                                  const pid = String(p.people_id || p.id); 
+                                                  const isSelf = pid === String(user?.id);
+                                                  const canEdit = canManage || isSelf;
+                                                  const isPersonalHonor = !!p.is_personal_honor; 
+                                                  
+                                                  // @ts-ignore
+                                                  const globalHonorExpiry = p.global_honor_expires_at || 0;
+                                                  const isGlobalHonorActive = globalHonorExpiry > now;
+                                                  const timeLeftSeconds = globalHonorExpiry - now;
+                                                  const daysLeft = Math.floor(timeLeftSeconds / 86400);
+
+                                                  return (
+                                                      <div key={pid} id={isSelf ? `self-row-${event.id}` : undefined} className={`flex items-center gap-3 p-2 rounded-xl border ${isSelf ? 'bg-zinc-800/50 border-chiachia-green/30' : 'bg-black/20 border-white/5'}`}>
+                                                          <div className="w-10 h-10 rounded-full bg-zinc-900 border border-white/10 overflow-hidden flex-shrink-0 relative">
+                                                              {p.s_url ? <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><UserPlus size={16}/></div>}
+                                                              {isPersonalHonor && <div className="absolute -bottom-1 -right-1 bg-amber-500 text-black text-[8px] p-0.5 rounded-full border border-black"><Flame size={8} fill="black"/></div>}
+                                                          </div>
+                                                          <div className="flex-1 min-w-0">
+                                                              <div className={`text-sm font-bold truncate ${isSelf ? 'text-white' : 'text-zinc-400'}`}>{p.name} {isSelf && '(Me)'}</div>
+                                                              <div className="flex items-center gap-2 mt-0.5">
+                                                                  {p.race_group ? <div className="text-[10px] text-amber-400 font-black uppercase flex items-center gap-1 shrink-0"><Trophy size={10}/> RANK: {p.race_group}</div> : <div className="text-[9px] text-zinc-600 font-bold uppercase">尚未登錄成績</div>}
+                                                                  {(isSelf && p.note) && <button onClick={() => setNoteModal({show: true, text: p.note || ''})} className="text-[10px] text-chiachia-green font-bold truncate max-w-[100px]"><MessageCircle size={8} className="inline mr-1"/>{p.note}</button>}
+                                                              </div>
+                                                          </div>
+                                                          
+                                                          {/* 1. Rider Honor Button */}
+                                                          {isPast && isSelf && p.race_group && !canManage && (
+                                                              <button 
+                                                                  onClick={() => setPersonalHonorConfirm({ show: true, event, participant: p })}
+                                                                  className={`w-8 h-8 flex items-center justify-center rounded-full transition-all border active:scale-95 ${isPersonalHonor ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 shadow-glow-gold' : 'bg-zinc-800 text-zinc-500 border-white/5'}`}
+                                                              >
+                                                                  <Flame size={14} className={isPersonalHonor ? 'fill-amber-500' : ''} />
+                                                              </button>
+                                                          )}
+
+                                                          {/* 2. Coach/Admin Global Honor Button */}
+                                                          {isPast && canManage && p.race_group && (
+                                                              <button 
+                                                                  onClick={() => setGlobalHonorConfirm({ show: true, event, participant: p })}
+                                                                  className={`h-8 px-2 flex items-center justify-center rounded-full transition-all border active:scale-95 gap-1 ${isGlobalHonorActive ? 'bg-amber-500 text-black border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-zinc-800 text-zinc-500 border-white/5'}`}
+                                                              >
+                                                                  <Flame size={14} className={isGlobalHonorActive ? 'fill-black' : ''} />
+                                                                  {isGlobalHonorActive && (
+                                                                      <span className="text-[9px] font-black font-mono">
+                                                                        {daysLeft > 0 ? `${daysLeft}D` : `${Math.floor(timeLeftSeconds/60)}m`}
+                                                                      </span>
+                                                                  )}
+                                                              </button>
+                                                          )}
+
+                                                          {canEdit && (
+                                                              <button onClick={() => openJoinModal(event, p)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 text-zinc-400 hover:text-white"><Edit2 size={14}/></button>
+                                                          )}
+                                                      </div>
+                                                  );
+                                              })}
+                                          </div>
+                                      </div>
+                                  )}
+                                  {!isExpanded && (
+                                      <div className="px-5 pb-4 pt-2 flex items-center justify-between border-t border-white/5 relative z-10 cursor-pointer pointer-events-none">
+                                          <div className="flex items-center gap-3">
+                                              {(event.participants && event.participants.length > 0) ? (
+                                                  <div className="flex -space-x-1.5">
+                                                      {event.participants.slice(0, 5).map((p) => (
+                                                          <div key={String(p.id || p.people_id)} className="w-5 h-5 rounded-full border border-black bg-zinc-800 overflow-hidden flex-shrink-0">
+                                                              {p.s_url ? (
+                                                                  <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover"/>
+                                                              ) : (
+                                                                  <div className="w-full h-full flex items-center justify-center text-[8px] text-zinc-500 font-bold">{p.name?.[0]}</div>
+                                                              )}
+                                                          </div>
+                                                      ))}
+                                                      {event.participants.length > 5 && (
+                                                          <div className="w-5 h-5 rounded-full border border-black bg-zinc-800 flex items-center justify-center text-[8px] text-zinc-500 font-black">
+                                                              +{event.participants.length - 5}
+                                                          </div>
+                                                      )}
+                                                  </div>
+                                              ) : null}
+                                              <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
+                                                  {event.participants?.length ? `${event.participants.length} 人參加` : '尚無選手'}
+                                              </span>
+                                          </div>
+                                          <div className="text-zinc-600 p-2"><ChevronDown size={20} /></div>
                                       </div>
                                   )}
                               </div>
-                              
-                              {/* Participants List */}
-                              {isExpanded && (
-                                  <div className="border-t border-white/5 bg-zinc-900/30 backdrop-blur-sm px-4 py-4 space-y-3 relative z-20 animate-slide-down" onClick={(e) => e.stopPropagation()}>
-                                      <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 flex items-center justify-between">
-                                          <span>Participants ({event.participants?.length || 0})</span>
-                                          <div className="flex items-center gap-2">
-                                              <button onClick={(e) => { e.stopPropagation(); handleShareEvent(event); }} className="flex items-center gap-1 px-2 py-1 bg-zinc-800 rounded-lg text-zinc-400 text-[9px] font-bold active:scale-95 transition-all hover:text-white">
-                                                  <Share2 size={10} /> 分享
-                                              </button>
-                                              {canManage && <button onClick={() => openCreateModal(event)} className="flex items-center gap-1 px-2 py-1 bg-zinc-800 rounded-lg text-zinc-400 text-[9px] font-bold active:scale-95 transition-all hover:text-white"><Edit2 size={10} /> 編輯</button>}
-                                          </div>
-                                      </div>
-                                      
-                                      <div className="grid grid-cols-1 gap-2">
-                                          {event.participants && event.participants.map((p) => {
-                                              const pid = String(p.people_id || p.id); 
-                                              const isSelf = pid === String(user?.id);
-                                              const canEdit = canManage || isSelf;
-                                              const isPersonalHonor = !!p.is_personal_honor; 
-                                              
-                                              // @ts-ignore
-                                              const globalHonorExpiry = p.global_honor_expires_at || 0;
-                                              const isGlobalHonorActive = globalHonorExpiry > now;
-                                              const timeLeftSeconds = globalHonorExpiry - now;
-                                              const daysLeft = Math.floor(timeLeftSeconds / 86400);
-
-                                              return (
-                                                  <div key={pid} id={isSelf ? `self-row-${event.id}` : undefined} className={`flex items-center gap-3 p-2 rounded-xl border ${isSelf ? 'bg-zinc-800/50 border-chiachia-green/30' : 'bg-black/20 border-white/5'}`}>
-                                                      <div className="w-10 h-10 rounded-full bg-zinc-900 border border-white/10 overflow-hidden flex-shrink-0 relative">
-                                                          {p.s_url ? <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><UserPlus size={16}/></div>}
-                                                          {isPersonalHonor && <div className="absolute -bottom-1 -right-1 bg-amber-500 text-black text-[8px] p-0.5 rounded-full border border-black"><Flame size={8} fill="black"/></div>}
-                                                      </div>
-                                                      <div className="flex-1 min-w-0">
-                                                          <div className={`text-sm font-bold truncate ${isSelf ? 'text-white' : 'text-zinc-400'}`}>{p.name} {isSelf && '(Me)'}</div>
-                                                          <div className="flex items-center gap-2 mt-0.5">
-                                                              {p.race_group ? <div className="text-[10px] text-amber-400 font-black uppercase flex items-center gap-1 shrink-0"><Trophy size={10}/> RANK: {p.race_group}</div> : <div className="text-[9px] text-zinc-600 font-bold uppercase">尚未登錄成績</div>}
-                                                              {(isSelf && p.note) && <button onClick={() => setNoteModal({show: true, text: p.note || ''})} className="text-[10px] text-chiachia-green font-bold truncate max-w-[100px]"><MessageCircle size={8} className="inline mr-1"/>{p.note}</button>}
-                                                          </div>
-                                                      </div>
-                                                      
-                                                      {/* 1. Rider Honor Button */}
-                                                      {isPast && isSelf && p.race_group && !canManage && (
-                                                          <button 
-                                                              onClick={() => setPersonalHonorConfirm({ show: true, event, participant: p })}
-                                                              className={`w-8 h-8 flex items-center justify-center rounded-full transition-all border active:scale-95 ${isPersonalHonor ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 shadow-glow-gold' : 'bg-zinc-800 text-zinc-500 border-white/5'}`}
-                                                          >
-                                                              <Flame size={14} className={isPersonalHonor ? 'fill-amber-500' : ''} />
-                                                          </button>
-                                                      )}
-
-                                                      {/* 2. Coach/Admin Global Honor Button */}
-                                                      {isPast && canManage && p.race_group && (
-                                                          <button 
-                                                              onClick={() => setGlobalHonorConfirm({ show: true, event, participant: p })}
-                                                              className={`h-8 px-2 flex items-center justify-center rounded-full transition-all border active:scale-95 gap-1 ${isGlobalHonorActive ? 'bg-amber-500 text-black border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-zinc-800 text-zinc-500 border-white/5'}`}
-                                                          >
-                                                              <Flame size={14} className={isGlobalHonorActive ? 'fill-black' : ''} />
-                                                              {isGlobalHonorActive && (
-                                                                  <span className="text-[9px] font-black font-mono">
-                                                                    {daysLeft > 0 ? `${daysLeft}D` : `${Math.floor(timeLeftSeconds/60)}m`}
-                                                                  </span>
-                                                              )}
-                                                          </button>
-                                                      )}
-
-                                                      {canEdit && (
-                                                          <button onClick={() => openJoinModal(event, p)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 text-zinc-400 hover:text-white"><Edit2 size={14}/></button>
-                                                      )}
-                                                  </div>
-                                              );
-                                          })}
-                                      </div>
-                                  </div>
-                              )}
-                              {!isExpanded && (
-                                  <div className="px-5 pb-4 pt-2 flex items-center justify-between border-t border-white/5 relative z-10 cursor-pointer pointer-events-none">
-                                      <div className="flex items-center gap-3">
-                                          {(event.participants && event.participants.length > 0) ? (
-                                              <div className="flex -space-x-1.5">
-                                                  {event.participants.slice(0, 5).map((p) => (
-                                                      <div key={String(p.id || p.people_id)} className="w-5 h-5 rounded-full border border-black bg-zinc-800 overflow-hidden flex-shrink-0">
-                                                          {p.s_url ? (
-                                                              <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover"/>
-                                                          ) : (
-                                                              <div className="w-full h-full flex items-center justify-center text-[8px] text-zinc-500 font-bold">{p.name?.[0]}</div>
-                                                          )}
-                                                      </div>
-                                                  ))}
-                                                  {event.participants.length > 5 && (
-                                                      <div className="w-5 h-5 rounded-full border border-black bg-zinc-800 flex items-center justify-center text-[8px] text-zinc-500 font-black">
-                                                          +{event.participants.length - 5}
-                                                      </div>
-                                                  )}
-                                              </div>
-                                          ) : null}
-                                          <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
-                                              {event.participants?.length ? `${event.participants.length} 人參加` : '尚無選手'}
-                                          </span>
-                                      </div>
-                                      <div className="text-zinc-600 p-2"><ChevronDown size={20} /></div>
-                                  </div>
-                              )}
                           </div>
-                      </div>
-                   );
-               })
+                       );
+                   })}
+                   
+                   {/* 🟢 載入更多按鈕 */}
+                   {filteredEvents.length > displayCount && (
+                       <button 
+                            onClick={() => setDisplayCount(prev => prev + 20)}
+                            className="w-full py-5 rounded-[28px] border border-white/5 bg-zinc-950/40 text-zinc-500 text-xs font-black uppercase tracking-[0.3em] flex items-center justify-center gap-3 active:scale-[0.98] transition-all hover:text-white hover:bg-zinc-900"
+                       >
+                            載入更多賽事 ({filteredEvents.length - displayCount}) <Plus size={16}/>
+                       </button>
+                   )}
+               </>
            ) : (
                <div className="flex flex-col items-center py-32 opacity-20 grayscale">
                    <Trophy size={64}/>
@@ -1017,12 +1036,9 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                       <div className="space-y-1">
                           <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">系列賽</label>
                           <div className="relative">
-                              <select 
-                                  value={createForm.series_id} 
-                                  onChange={e => setCreateForm({...createForm, series_id: e.target.value})} 
-                                  className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none appearance-none focus:border-chiachia-green/50"
-                              >
-                                  {raceGroups.filter((g: any) => g.name !== '(None)' && g.series_name !== '(None)').map((g: any) => <option key={g.id} value={g.id}>{g.name || g.series_name}</option>)}
+                              <select value={createForm.series_id} onChange={e => setCreateForm({...createForm, series_id: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none appearance-none focus:border-chiachia-green/50">
+                                  <option value="">(無)</option>
+                                  {raceGroups.map((g: any) => <option key={g.id} value={g.id}>{g.name || g.series_name}</option>)}
                               </select>
                               <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"/>
                           </div>
@@ -1087,22 +1103,20 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                   <div className="space-y-4">
                       <div className="space-y-1">
                           <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">選手</label>
-                          {canManage && !showJoinModal.participant ? (
+                          {canManage && !showJoinModal.participant && !isModalEventPast ? (
                               <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto p-1 bg-zinc-900/50 rounded-xl border border-white/5">
                                   {selectablePeople.map((p: any) => {
-                                      const isAlreadyJoined = showJoinModal.event?.participants?.some(part => String(part.people_id || part.id) === String(p.id));
                                       const isSelected = bulkSelectedIds.includes(String(p.id));
                                       return (
                                           <button 
                                               key={p.id} 
-                                              onClick={() => !isAlreadyJoined && toggleBulkSelect(String(p.id), isModalEventPast)}
-                                              className={`flex flex-col items-center gap-1 p-2 rounded-lg border transition-all ${isAlreadyJoined ? 'bg-chiachia-green/10 border-chiachia-green cursor-not-allowed' : isSelected ? 'bg-chiachia-green/10 border-chiachia-green' : 'bg-zinc-800 border-white/5 opacity-60'}`}
-                                              disabled={isAlreadyJoined}
+                                              onClick={() => toggleBulkSelect(String(p.id), false)}
+                                              className={`flex flex-col items-center gap-1 p-2 rounded-lg border transition-all ${isSelected ? 'bg-chiachia-green/10 border-chiachia-green' : 'bg-zinc-800 border-white/5 opacity-60'}`}
                                           >
-                                              <div className={`w-8 h-8 rounded-full overflow-hidden ${isAlreadyJoined ? 'ring-2 ring-chiachia-green' : isSelected ? 'ring-2 ring-chiachia-green' : ''}`}>
+                                              <div className={`w-8 h-8 rounded-full overflow-hidden ${isSelected ? 'ring-2 ring-chiachia-green' : ''}`}>
                                                   {p.s_url ? <img src={p.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-black flex items-center justify-center text-[8px]">{p.name[0]}</div>}
                                               </div>
-                                              <span className={`text-[9px] font-bold truncate w-full text-center ${isAlreadyJoined || isSelected ? 'text-white' : 'text-zinc-500'}`}>{p.name}</span>
+                                              <span className={`text-[9px] font-bold truncate w-full text-center ${isSelected ? 'text-white' : 'text-zinc-500'}`}>{p.name}</span>
                                           </button>
                                       );
                                   })}

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../services/api';
@@ -126,6 +125,9 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
   });
   const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
   
+  // 🟢 分頁狀態：預設顯示 20 筆
+  const [displayCount, setDisplayCount] = useState(20);
+  
   // Modal State for Trend Analysis
   const [trendModal, setTrendModal] = useState<{ show: boolean, data: any | null }>({ show: false, data: null });
 
@@ -148,6 +150,11 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
           setTrendType(trainingTypes[0].id);
       }
   }, [trainingTypes]);
+
+  // 🟢 當篩選條件改變時，重置顯示數量
+  useEffect(() => {
+      setDisplayCount(20);
+  }, [trendType, trendDateRange, customDateRange]);
 
   // Process Trend Data
   const trendData = useMemo(() => {
@@ -219,6 +226,9 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
           return { date, riders };
       });
   }, [data, trendType, trendDateRange, customDateRange, trainingTypes, people]);
+
+  // 🟢 取得分頁後的資料
+  const visibleTrendData = useMemo(() => trendData.slice(0, displayCount), [trendData, displayCount]);
 
   const handleJumpToRider = (riderId: string, date: string) => {
       setTrendModal({ show: false, data: null }); // Close modal
@@ -436,7 +446,7 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
 
          {/* Daily Cards */}
          <div className="space-y-6">
-             {trendData.map((dayData, idx) => (
+             {visibleTrendData.map((dayData, idx) => (
                  <button 
                     key={dayData.date} 
                     onClick={() => openTrendModal(dayData)}
@@ -473,6 +483,17 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
                      </div>
                  </button>
              ))}
+
+             {/* 🟢 載入更多按鈕 */}
+             {trendData.length > displayCount && (
+                 <button 
+                    onClick={() => setDisplayCount(prev => prev + 20)}
+                    className="w-full py-4 rounded-2xl border border-white/10 bg-zinc-900/50 text-zinc-400 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all hover:bg-zinc-800 hover:text-white"
+                 >
+                    載入更多日期 ({trendData.length - displayCount}) <ChevronDown size={14}/>
+                 </button>
+             )}
+
              {trendData.length === 0 && (
                  <div className="py-12 flex flex-col items-center opacity-30">
                      <Activity size={48} className="text-zinc-500 mb-2"/>

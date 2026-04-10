@@ -2,7 +2,7 @@ export const handleTraining = async ({ request, env, url, path, method, getDB, T
     if (path === "/api/training-records") {
         if (method === "GET") { 
             // ✅ 分頁：預設 5000 筆，支援前端傳入 limit / offset
-            const limit = parseInt(url.searchParams.get('limit')) || 5000;
+            const limit = parseInt(url.searchParams.get('limit')) || 20;
             const offset = parseInt(url.searchParams.get('offset')) || 0;
             const { results } = await getDB().prepare(`SELECT R.id, R.date, R.people_id, R.training_type_id, R.score as value, R.note, T.type_name as name, P.name as person_name, R.created_at, R.client_id FROM TrainingRecords R JOIN TrainingTypes T ON R.training_type_id = T.id JOIN People P ON R.people_id = P.id WHERE R.team_id = ${TEAM_ID} ORDER BY R.date DESC, R.created_at DESC, R.id DESC LIMIT ? OFFSET ?`).bind(limit, offset).all(); 
             return Response.json(results, { headers: corsHeaders }); 

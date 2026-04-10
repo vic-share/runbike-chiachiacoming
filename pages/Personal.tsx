@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { api } from '../services/api';
 import { uploadImage } from '../services/supabase';
 import { DataRecord, LookupItem } from '../types';
-import { User, Award, Activity, Camera, UploadCloud, Loader2, ChevronRight, Trophy, MapPin, Search, X } from 'lucide-react';
+import { User, Award, Activity, Camera, UploadCloud, Loader2, ChevronRight, Trophy, MapPin, Search, X, ChevronDown } from 'lucide-react';
 import { format } from 'date-fns';
 import { hasRole, ROLES } from '../utils/auth';
 
@@ -10,9 +10,17 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState(''); // 搜尋關鍵字狀態
 
+  // 🟢 分頁狀態：預設顯示 20 筆
+  const [displayCount, setDisplayCount] = useState(20);
+
   const person = useMemo(() => people.find((p: any) => String(p.id) === String(activePersonId)), [people, activePersonId]);
   
   const personalData = useMemo(() => data.filter((d: any) => String(d.people_id) === String(activePersonId)), [data, activePersonId]);
+
+  // 🟢 當切換選手時重置分頁
+  useEffect(() => {
+    setDisplayCount(20);
+  }, [activePersonId]);
 
   // 動態搜尋邏輯
   const filteredRiders = useMemo(() => {
@@ -160,9 +168,10 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
 
       {/* Recent Activity Mini List */}
       <section className="space-y-4">
-          <div className="text-[10px] font-black text-zinc-600 tracking-[0.3em] uppercase">Recent Records</div>
+          <div className="text-[10px] font-black text-zinc-600 tracking-[0.3em] uppercase">歷程紀錄</div>
           <div className="space-y-2">
-              {personalData.slice(0, 5).map((rec: any, i: number) => (
+              {/* 🟢 使用 displayCount 控制顯示筆數 */}
+              {personalData.slice(0, displayCount).map((rec: any, i: number) => (
                   <div key={i} className="glass-card p-4 rounded-2xl flex justify-between items-center border-white/5">
                       <div className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${rec.item === 'training' ? 'bg-chiachia-green/10 text-chiachia-green' : 'bg-amber-400/10 text-amber-400'}`}>
@@ -178,6 +187,16 @@ const Personal: React.FC<any> = ({ data, people, trainingTypes, raceGroups, refr
                       </div>
                   </div>
               ))}
+
+              {/* 🟢 載入更多按鈕 */}
+              {personalData.length > displayCount && (
+                  <button 
+                    onClick={() => setDisplayCount(prev => prev + 20)}
+                    className="w-full py-4 mt-2 rounded-2xl border border-white/10 bg-zinc-900/50 text-zinc-400 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
+                  >
+                    顯示更多紀錄 ({personalData.length - displayCount}) <ChevronDown size={14}/>
+                  </button>
+              )}
           </div>
       </section>
     </div>
