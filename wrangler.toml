@@ -1,6 +1,7 @@
 
 name = "chiachiacoming"
-main = "worker.js"
+# main = "worker.js"
+main = "api/index.js"
 compatibility_date = "2026-02-04"
 compatibility_flags = ["nodejs_compat"]
 
