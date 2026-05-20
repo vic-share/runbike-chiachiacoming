@@ -4,9 +4,7 @@ import { LookupItem } from '../../types';
 import { PlayerManager } from './PlayerManager';
 import { CourseTicket } from './CourseTicket';
 import { PushSystem } from './PushSystem';
-import { createPortal } from 'react-dom'; // 🟢 補上彈窗需要的 portal
-import { api } from '../../services/api';
-import { Users, Calendar, Bell, LogOut, ChevronRight, UserCircle2 } from 'lucide-react';
+import { User, Users, Calendar, Bell, Shield, LogOut, ChevronRight, UserCircle2 } from 'lucide-react';
 import { hasRole, ROLES } from '../../utils/auth';
 
 interface SettingsIndexProps {
@@ -16,20 +14,13 @@ interface SettingsIndexProps {
     tickets: LookupItem[];
     salesHistory?: any[];
     refreshData: () => void;
-    // 🟢 移除外部的 onLogout 參數，改由內部自治，確保 App.tsx 傳不傳都不會崩潰黑畫面
+    onLogout: () => void;
 }
 
-export const SettingsIndex: React.FC<SettingsIndexProps> = ({ user, people, classes, tickets, salesHistory = [], refreshData }) => {
+export const SettingsIndex: React.FC<SettingsIndexProps> = ({ user, people, classes, tickets, salesHistory = [], refreshData, onLogout }) => {
     const [adminView, setAdminView] = useState<'menu' | 'players' | 'courses' | 'push'>('menu');
-    const [showLogoutModal, setShowLogoutModal] = useState(false); // 🟢 內置登出確認彈窗狀態
 
     const isCoachOrAdmin = hasRole(user, ROLES.COACH) || hasRole(user, ROLES.DEV) || hasRole(user, ROLES.AIDE);
-
-    // 🟢 內部直連 api.logout() 乾淨利落，不依賴外部傳參
-    const handleInternalLogout = () => {
-        api.logout();
-        window.location.reload(); // 🟢 登出後直接刷新頁面，回歸最乾淨的初始登入選擇選手狀態
-    };
 
     if (adminView === 'players') {
         return <PlayerManager people={people} user={user} refreshData={refreshData} onBack={() => setAdminView('menu')} />;
@@ -83,7 +74,7 @@ export const SettingsIndex: React.FC<SettingsIndexProps> = ({ user, people, clas
 
                         <button onClick={() => setAdminView('push')} className="w-full p-4 flex items-center justify-between text-left active:bg-zinc-900/50 transition-colors">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center"><Bell size={18}/></div>
+                                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center"><Bell size={18}/></div>
                                 <span className="font-bold text-white text-sm">公告與即時推播系統</span>
                             </div>
                             <ChevronRight size={16} className="text-zinc-600"/>
@@ -96,7 +87,7 @@ export const SettingsIndex: React.FC<SettingsIndexProps> = ({ user, people, clas
             <div className="space-y-2">
                 <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest pl-1">帳戶設定</div>
                 <div className="glass-card rounded-2xl border border-white/5 overflow-hidden">
-                    <button onClick={() => setShowLogoutModal(true)} className="w-full p-4 flex items-center justify-between text-left active:bg-zinc-900/50 transition-colors">
+                    <button onClick={onLogout} className="w-full p-4 flex items-center justify-between text-left active:bg-zinc-900/50 transition-colors">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center"><LogOut size={18}/></div>
                             <span className="font-bold text-rose-500 text-sm">登出系統</span>
@@ -105,21 +96,6 @@ export const SettingsIndex: React.FC<SettingsIndexProps> = ({ user, people, clas
                     </button>
                 </div>
             </div>
-
-            {/* 🟢 補回原本擁有的登出確認對話盒 */}
-            {showLogoutModal && createPortal(
-                <div className="fixed inset-0 z-[60000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-                    <div className="glass-card w-full max-w-xs rounded-3xl p-6 border border-white/10 text-center animate-scale-in bg-zinc-950">
-                        <h3 className="text-xl font-black text-white italic mb-2">登出帳號</h3>
-                        <p className="text-zinc-400 text-sm font-bold mb-6">確定要登出管理系統嗎？</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            <button onClick={() => setShowLogoutModal(false)} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl active:bg-zinc-700 transition-colors">取消</button>
-                            <button onClick={handleInternalLogout} className="py-3 bg-rose-600 text-white font-black rounded-xl">登出</button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
         </div>
     );
 };
