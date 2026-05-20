@@ -17,6 +17,7 @@ interface LayoutProps {
   isOffline?: boolean;
 }
 
+
 const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, title = "Chia Chia Coming!", subtitle, courseSystemEnabled = true, isOffline = false }) => {
   const [user, setUser] = useState(api.getUser());
   const [unreadCount, setUnreadCount] = useState(0);
