@@ -10,6 +10,8 @@ import { InstallPwaModal } from './components/InstallPwaModal';
 import { api } from './services/api';
 import { DataRecord, LookupItem, TeamInfo, RaceEvent, LegendRecord } from './types';
 import { LockKeyhole, Loader2 } from 'lucide-react';
+// 🟢 匯入權限判定清單與工具
+import { hasPermission, PERMISSIONS } from './utils/auth';
 
 const DEFAULT_NAME = '睿睿';
 
@@ -55,7 +57,6 @@ const App: React.FC = () => {
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
 
-      // Initial sync if online
       if (navigator.onLine) {
           const runBackgroundSync = () => {
               if ('requestIdleCallback' in window) {
@@ -64,7 +65,6 @@ const App: React.FC = () => {
                       api.syncHistoricalData();
                   }, { timeout: 10000 });
               } else {
-                  // Fallback for older browsers
                   setTimeout(() => {
                       console.log("[System] 使用備用 setTimeout 同步歷史資料...");
                       api.syncHistoricalData();
@@ -130,7 +130,7 @@ const App: React.FC = () => {
       }
   }, []);
 
-  // [NEW] Handle URL Query Params for Deep Linking
+  // Handle URL Query Params for Deep Linking
   useEffect(() => {
       const params = new URLSearchParams(window.location.search);
       const page = params.get('page');
@@ -141,7 +141,6 @@ const App: React.FC = () => {
           if (page === 'settings' && target) {
               setSettingsTarget(target);
           }
-          // Clean URL
           window.history.replaceState({}, '', '/');
       }
   }, []);
@@ -226,6 +225,12 @@ const App: React.FC = () => {
   const handleDeepLinkToTraining = (riderId: string | number, date?: string) => {
       if (riderId) handleUpdateActivePerson(riderId);
       if (date) setJumpDate(date);
+      // 🟢 進入前再次檢查：如果點選深度連結但使用者無權限看數據，攔截防禦
+      const user = api.getUser();
+      if (!hasPermission(user, PERMISSIONS.RACING_DATA_VIEW)) {
+          setCurrentPage('dashboard');
+          return;
+      }
       setCurrentPage('training');
   };
 
@@ -234,7 +239,6 @@ const App: React.FC = () => {
       handleNavigation('races');
   };
 
-  // New handler to clear jump state
   const handleClearJumpDate = () => {
       setJumpDate(null);
   };
@@ -252,7 +256,6 @@ const App: React.FC = () => {
         navigator.clearAppBadge().catch(() => {});
     }
 
-    // Parse page for deep links
     let targetPage = page;
     let targetId: string | null = null;
 
@@ -262,19 +265,26 @@ const App: React.FC = () => {
         targetId = parts[1];
     }
 
-    // Handle Races Deep Link
     if (targetPage === 'races' && targetId) {
         setTargetRaceId(targetId);
     }
     
-    // Handle Settings Deep Link
     if (targetPage === 'settings' && targetId) {
         setSettingsTarget(targetId);
     }
 
-    // Handle Training Deep Link
     if (targetPage === 'training' && targetId) {
         setJumpDate(targetId);
+    }
+
+    // 🟢 核心攔截防禦：如果使用者嘗試點進去「訓練數據 (training)」分頁，但沒有 RACING_DATA_VIEW 權限
+    // 直接強制轉回「總覽 (dashboard)」，達到雙重安全防護
+    if (targetPage === 'training') {
+        const user = api.getUser();
+        if (!hasPermission(user, PERMISSIONS.RACING_DATA_VIEW)) {
+            setCurrentPage('dashboard');
+            return;
+        }
     }
 
     // Require Login for Races AND Courses
@@ -283,7 +293,7 @@ const App: React.FC = () => {
         if (!user || !user.id) {
             setShowRedirectModal(true);
             setTimeout(() => {
-                setReturnPage(page); // Keep full path for return
+                setReturnPage(page); 
                 setCurrentPage('settings');
                 setShowRedirectModal(false);
             }, 1500);
@@ -346,9 +356,11 @@ const App: React.FC = () => {
       case 'dashboard':
         return (
           <Dashboard 
+            // 🟢 核心修正：將目前的登入 user 傳遞進去，這樣 Dashboard 的訓練趨勢分析才能做權限控制
+            user={api.getUser()}
             data={activeData} 
             trainingTypes={trainingTypes}
-            raceGroups={raceGroups} // Pass raceGroups for forecast
+            raceGroups={raceGroups} 
             refreshData={fetchData}
             onNavigateToRaces={handleDeepLinkToRace} 
             onNavigateToPerson={handleNavigateToPerson}
@@ -382,7 +394,7 @@ const App: React.FC = () => {
             people={people} 
             refreshData={fetchData} 
             raceGroups={raceGroups} 
-            initialExpandedEventId={targetRaceId} // Pass target ID
+            initialExpandedEventId={targetRaceId} 
           />
         );
       case 'training':
@@ -398,8 +410,8 @@ const App: React.FC = () => {
             pinnedPeopleIds={pinnedPeopleIds}
             onTogglePinned={handleTogglePinnedPerson}
             raceEvents={raceEvents} 
-            initialExpandedDate={jumpDate} // Pass date prop
-            onClearJumpDate={handleClearJumpDate} // Pass clearing handler
+            initialExpandedDate={jumpDate} 
+            onClearJumpDate={handleClearJumpDate} 
           />
         );
       case 'settings':
@@ -418,11 +430,11 @@ const App: React.FC = () => {
             }}
             onLoginSuccess={handleLoginSuccess}
             onUpdateName={() => {}} 
-            initialView={settingsTarget} // [NEW] Pass the deep link target
+            initialView={settingsTarget} 
           />
         );
       default:
-        return <Dashboard data={activeData} trainingTypes={trainingTypes} raceGroups={raceGroups} people={people} refreshData={fetchData} onNavigateToRaces={() => handleNavigation('races')} defaultTrainingType={defaultTrainingType} onNavigateToPerson={handleNavigateToPerson} onNavigateToTraining={() => setCurrentPage('training')} legends={legends} forecast={forecast} />;
+        return <Dashboard user={api.getUser()} data={activeData} trainingTypes={trainingTypes} raceGroups={raceGroups} people={people} refreshData={fetchData} onNavigateToRaces={() => handleNavigation('races')} defaultTrainingType={defaultTrainingType} onNavigateToPerson={handleNavigateToPerson} onNavigateToTraining={() => setCurrentPage('training')} legends={legends} forecast={forecast} />;
     }
   };
 
