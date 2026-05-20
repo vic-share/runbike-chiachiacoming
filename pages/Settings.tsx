@@ -93,9 +93,16 @@ async function getCroppedImg(imageSrc: string, pixelCrop: any): Promise<Blob> {
 
 const getRoleStyle = (person: any) => {
     const roles = person.roles || [];
+    
+    // 1. 優先判斷高階管理與教練層身分，維持原本設計的色彩與層級排名
     if (roles.includes(ROLES.DEV)) return { tier: 4, border: 'border-blue-500', shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.5)]', iconColor: 'text-blue-500' };
     if (roles.includes(ROLES.COACH)) return { tier: 3, border: 'border-rose-500', shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.5)]', iconColor: 'text-rose-500' };
     if (roles.includes(ROLES.AIDE)) return { tier: 2, border: 'border-amber-500', shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.5)]', iconColor: 'text-amber-500' };
+    
+    // 2. 🟢 新增：如果是一般選手，但是是「RACING」競速組人員，比照 AIDE 特效，亮起 App 專屬綠色光圈與發光
+    if (roles.includes(ROLES.RACING)) return { tier: 1.5, border: 'border-chiachia-green', shadow: 'shadow-[0_0_15px_rgba(57,231,95,0.4)]', iconColor: 'text-chiachia-green' };
+    
+    // 3. 一般普通學員 (RIDER) 的預設低調樣式
     return { tier: 1, border: 'border-white/10', shadow: 'shadow-2xl', iconColor: 'text-zinc-500' };
 };
 
@@ -615,9 +622,52 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const toggleFixedStudent = (id: number | string) => { setFormData((prev: any) => { const current = prev.default_student_ids || []; if (current.includes(String(id))) { return { ...prev, default_student_ids: current.filter((sid: string) => sid !== String(id)) }; } else { return { ...prev, default_student_ids: [...current, String(id)] }; } }); };
   const handleSaveConfig = async (type: 'training'|'series') => { if(!formData.name) return; setIsSubmitting(true); let res = false; const action = isEditMode ? 'update' : 'create'; const payload = isEditMode ? { id: formData.id, [type === 'training' ? 'type_name' : 'series_name']: formData.name, is_default: formData.is_default } : { [type === 'training' ? 'type_name' : 'series_name']: formData.name, is_default: formData.is_default }; if(type === 'training') res = await api.manageTrainingType(action, payload); if(type === 'series') res = await api.manageRaceSeries(action, payload); if(res) { await refreshData(); setShowModal(false); } setIsSubmitting(false); };
   const handleDeleteConfig = (type: 'training'|'series', id: string|number) => { setConfirmModal({ show: true, title: "確認刪除", message: "確定要刪除此項目嗎？", onConfirm: async () => { let res = false; if(type === 'training') res = await api.manageTrainingType('delete', { id }); if(type === 'series') res = await api.manageRaceSeries('delete', { id }); if(res) { await refreshData(); setShowModal(false); } setConfirmModal(null); } }); };
-  const handleAddPerson = async () => { if(!formData.name) return; setIsSubmitting(true); const res = await api.createPerson(formData.name, formData.full_name || formData.name, 'parent', formData.birthday, formData.roles || [ROLES.RIDER]); if(res) { await refreshData(); setShowModal(false); } setIsSubmitting(false); };
-  const handleEditPerson = async () => { if(!formData.id || !formData.name) return; setIsSubmitting(true); const res = await api.manageLookup('people', formData.name, formData.id, false, formData.is_hidden, { birthday: formData.birthday, full_name: formData.full_name, roles: formData.roles }); if(res) { if (user && String(formData.id) === String(user.id)) { const newUser = { ...user, name: formData.name, birthday: formData.birthday, full_name: formData.full_name, roles: formData.roles, is_hidden: formData.is_hidden }; setUser(newUser); localStorage.setItem('CHIACHIA_USER', JSON.stringify(newUser)); } await refreshData(); setShowModal(false); } setIsSubmitting(false); };
-  
+  const handleAddPerson = async () => {
+    if(!formData.name) return;
+    setIsSubmitting(true);
+    
+    // --- 加上安全防禦線 ---
+    let finalRoles = formData.roles || [ROLES.RIDER];
+    if (!hasRole(user, ROLES.DEV) && !hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) && hasRole(user, ROLES.AIDE)) {
+        finalRoles = finalRoles.filter((r: string) => r === ROLES.RIDER || r === ROLES.RACING);
+        if (finalRoles.length === 0) finalRoles = [ROLES.RIDER]; // 預設防呆
+    }
+    // ---------------------
+
+    const res = await api.createPerson(formData.name, formData.full_name || formData.name, 'parent', formData.birthday, finalRoles); // 🟢 這裡代入變更後的 finalRoles
+    if(res) {
+        await refreshData();
+        setShowModal(false);
+    }
+    setIsSubmitting(false);
+  };
+
+// 🟢 找到 handleEditPerson 函數
+  const handleEditPerson = async () => {
+    if(!formData.id || !formData.name) return;
+    setIsSubmitting(true);
+
+    // --- 加上安全防禦線 ---
+    let finalRoles = formData.roles || [];
+    if (!hasRole(user, ROLES.DEV) && !hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) && hasRole(user, ROLES.AIDE)) {
+        finalRoles = finalRoles.filter((r: string) => r === ROLES.RIDER || r === ROLES.RACING);
+        if (finalRoles.length === 0) finalRoles = [ROLES.RIDER]; // 預設防呆
+    }
+    // ---------------------
+
+    const res = await api.manageLookup('people', formData.name, formData.id, false, formData.is_hidden, { birthday: formData.birthday, full_name: formData.full_name, roles: finalRoles }); // 🟢 這裡代入 finalRoles
+    if(res) {
+        if (user && String(formData.id) === String(user.id)) {
+            const newUser = { ...user, name: formData.name, birthday: formData.birthday, full_name: formData.full_name, roles: finalRoles, is_hidden: formData.is_hidden };
+            setUser(newUser);
+            localStorage.setItem('CHIACHIA_USER', JSON.stringify(newUser));
+        }
+        await refreshData();
+        setShowModal(false);
+    }
+    setIsSubmitting(false);
+  };
+
   // Updated: Changed default reset password to 123456
   const handleResetPassword = () => { 
       if(!formData.id || !formData.name) return; 
@@ -811,7 +861,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
               }
           }
           if(adminView === 'players') { 
-              const sortedPeople = people.filter((p: any) => !p.is_hidden && p.roles?.includes(ROLES.RIDER)).sort(sortPeopleByRole); 
+              const sortedPeople = people.filter((p: any) => !p.is_hidden && (p.roles?.includes(ROLES.RIDER) || p.roles?.includes(ROLES.RACING))).sort(sortPeopleByRole);
               return ( 
                 <> 
                     <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> 
@@ -1218,7 +1268,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                             <MenuCard title="修改密碼" icon={<LockKeyhole/>} onClick={() => { setFormData({}); setPasswordError(''); setModalType('change_password'); setShowModal(true); }} /> 
                             <MenuCard title="推播通知" icon={<BellRing/>} onClick={() => { setModalType('settings_menu'); setShowModal(true); }} />
                             <MenuCard title="使用說明書" icon={<BookOpen/>} onClick={() => { setModalType('manual'); setShowModal(true); }} />
-                            {(hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="人員管理" icon={<User/>} onClick={() => setAdminView('players')} />}
+                            {(hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) || hasRole(user, ROLES.DEV) || hasRole(user, ROLES.AIDE)) && <MenuCard title="人員管理" icon={<User/>} onClick={() => setAdminView('players')} />}
                             {(hasPermission(user, PERMISSIONS.COURSE_EDIT) || hasPermission(user, PERMISSIONS.TICKET_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="課程票務" icon={<LayoutGrid/>} onClick={() => { setAdminView('course_ticket'); setCourseCategory(null); setTicketView('menu'); }} badge={ticketRequests.length} />}
                             {(hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="訓練項目" icon={<Activity/>} onClick={() => setAdminView('training')} />}
                             {(hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="賽事系列" icon={<Flag/>} onClick={() => setAdminView('series')} />}
@@ -1351,7 +1401,16 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                 <div className="space-y-1">
                                     <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">角色權限</label>
                                     <div className="flex flex-wrap gap-2">
-                                        {[ROLES.RIDER, ROLES.AIDE, ROLES.COACH, ROLES.RACING].map(role => (
+                                        {[ROLES.RIDER, ROLES.AIDE, ROLES.COACH, ROLES.RACING]
+                                        .filter(role => {
+                                            // 如果是高階管理員或主教練，可以看到所有角色按鈕
+                                            if (hasRole(user, ROLES.DEV) || hasPermission(user, PERMISSIONS.PEOPLE_MANAGE)) {
+                                                return true;
+                                            }
+                                            // 否則（如 AIDE 執行操作），畫面上只能看見與操作 RIDER 和 RACING
+                                            return role === ROLES.RIDER || role === ROLES.RACING;
+                                        })
+                                        .map(role => (
                                             <button key={role} onClick={() => handleToggleRole(role)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${formData.roles?.includes(role) ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>
                                                 {role}
                                             </button>

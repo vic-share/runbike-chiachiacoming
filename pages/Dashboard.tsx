@@ -6,6 +6,8 @@ import { ChevronRight, Trophy, MapPin, Zap, CalendarDays, ChevronDown, Activity,
 import { SimpleComposedChart } from '../components/SimpleComposedChart';
 import { ForecastItem } from '../components/ForecastItem';
 import { format, parseISO, isAfter, subDays, subMonths, isWithinInterval, startOfDay, endOfDay, isValid } from 'date-fns';
+// 🟢 匯入權限檢查工具與權限清單
+import { hasPermission, PERMISSIONS } from '../utils/auth';
 
 const HallOfFameTicker = ({ items }: { items: LegendRecord[] }) => {
     if (items.length === 0) return null;
@@ -108,7 +110,8 @@ const ForecastTicker = ({ items, onNavigate, raceGroups }: { items: any[], onNav
     );
 };
 
-const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, raceGroups, onNavigateToTraining, defaultTrainingType, people, legends = [], forecast = [] }) => {
+// 🟢 傳入 user 物件以便進行角色權限判定
+const Dashboard: React.FC<any> = ({ user, onNavigateToRaces, data, trainingTypes, raceGroups, onNavigateToTraining, defaultTrainingType, people, legends = [], forecast = [] }) => {
   const [trendType, setTrendType] = useState<string | number>(defaultTrainingType);
   const [trendDateRange, setTrendDateRange] = useState<'1W' | '1M' | '3M' | 'ALL' | 'PICK'>('1M');
   const [customDateRange, setCustomDateRange] = useState<{start: string, end: string}>({
@@ -117,10 +120,15 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
   });
   const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
   
-  // 🟢 控制一次顯示幾個「日子」
+  // 控制一次顯示幾個「日子」
   const [displayCount, setDisplayCount] = useState(10);
   
   const [trendModal, setTrendModal] = useState<{ show: boolean, data: any | null }>({ show: false, data: null });
+
+  // 🟢 檢查目前登入的使用者是否擁有觀看競速數據的權限
+  const canViewRacingStats = useMemo(() => {
+      return hasPermission(user, PERMISSIONS.RACING_DATA_VIEW);
+  }, [user]);
 
   const calculateStability = (values: number[]) => {
       if (values.length === 0) return 0;
@@ -142,12 +150,15 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
       }
   }, [trainingTypes]);
 
-  // 🟢 當篩選條件改變時，把顯示天數重置回 10
+  // 當篩選條件改變時，把顯示天數重置回 10
   useEffect(() => {
       setDisplayCount(10);
   }, [trendType, trendDateRange, customDateRange]);
 
   const trendData = useMemo(() => {
+      // 🟢 安全防護：如果根本沒有權限，就不用浪費效能做數據處理了
+      if (!canViewRacingStats) return [];
+
       let typeId = trendType;
       if (typeof trendType === 'string') {
           const t = trainingTypes.find((t: any) => t.name === trendType || t.type_name === trendType || String(t.id) === trendType);
@@ -215,9 +226,9 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
 
           return { date, riders };
       });
-  }, [data, trendType, trendDateRange, customDateRange, trainingTypes, people]);
+  }, [data, trendType, trendDateRange, customDateRange, trainingTypes, people, canViewRacingStats]);
 
-  // 🟢 根據 displayCount 截取前 N 個日子
+  // 根據 displayCount 截取前 N 個日子
   const visibleTrendData = useMemo(() => trendData.slice(0, displayCount), [trendData, displayCount]);
 
   const handleJumpToRider = (riderId: string, date: string) => {
@@ -357,129 +368,131 @@ const Dashboard: React.FC<any> = ({ onNavigateToRaces, data, trainingTypes, race
          </div>
       </section>
 
-      <section className="space-y-4">
-         <div className="flex flex-col">
-            <h2 className="text-xs font-black text-zinc-600 tracking-[0.3em] uppercase">Training Insights</h2>
-            <div className="text-2xl font-black text-white italic tracking-tight">訓練趨勢分析</div>
-         </div>
+      {/* 🟢 2. 訓練趨勢分析區塊：加上權限保護判斷，如果沒有權限，此區塊將完全隱藏 */}
+      {canViewRacingStats && (
+        <section className="space-y-4 animate-fade-in">
+           <div className="flex flex-col">
+              <h2 className="text-xs font-black text-zinc-600 tracking-[0.3em] uppercase">Training Insights</h2>
+              <div className="text-2xl font-black text-white italic tracking-tight">訓練趨勢分析</div>
+           </div>
 
-         <div className="flex justify-between items-center gap-2">
-             <div className="relative flex-1">
-                 <select value={trendType} onChange={e => setTrendType(e.target.value)} className="w-full bg-zinc-900 border border-white/10 text-white text-xs font-black uppercase tracking-wider rounded-xl px-3 py-2.5 pr-8 outline-none appearance-none h-10"> 
-                    {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} 
-                 </select>
-                 <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"/>
-             </div>
-             
-             <div className="relative flex-1 max-w-[160px] z-50">
-                 <button 
-                     onClick={() => setIsDateMenuOpen(!isDateMenuOpen)}
-                     className={`relative flex items-center justify-between px-3 h-10 w-full rounded-xl border transition-all ${isDateMenuOpen ? 'bg-zinc-800 border-white/20 text-white' : 'bg-zinc-900 border-white/5 text-zinc-500'}`}
-                 >
-                     <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                         <CalendarDays size={14} className="shrink-0" />
-                         <span className="text-xs font-black uppercase tracking-wider truncate">
-                             {getRangeLabel()}
-                         </span>
-                     </div>
-                     <ChevronDown size={12} className={`shrink-0 transition-transform ${isDateMenuOpen ? 'rotate-180' : ''}`} />
-                 </button>
+           <div className="flex justify-between items-center gap-2">
+               <div className="relative flex-1">
+                   <select value={trendType} onChange={e => setTrendType(e.target.value)} className="w-full bg-zinc-900 border border-white/10 text-white text-xs font-black uppercase tracking-wider rounded-xl px-3 py-2.5 pr-8 outline-none appearance-none h-10"> 
+                      {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} 
+                   </select>
+                   <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"/>
+               </div>
+               
+               <div className="relative flex-1 max-w-[160px] z-50">
+                   <button 
+                       onClick={() => setIsDateMenuOpen(!isDateMenuOpen)}
+                       className={`relative flex items-center justify-between px-3 h-10 w-full rounded-xl border transition-all ${isDateMenuOpen ? 'bg-zinc-800 border-white/20 text-white' : 'bg-zinc-900 border-white/5 text-zinc-500'}`}
+                   >
+                       <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+                           <CalendarDays size={14} className="shrink-0" />
+                           <span className="text-xs font-black uppercase tracking-wider truncate">
+                               {getRangeLabel()}
+                           </span>
+                       </div>
+                       <ChevronDown size={12} className={`shrink-0 transition-transform ${isDateMenuOpen ? 'rotate-180' : ''}`} />
+                   </button>
 
-                 {isDateMenuOpen && (
-                     <div className="absolute top-full right-0 mt-2 w-48 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-2 z-[60] flex flex-col gap-1 animate-scale-in origin-top-right">
-                         <div className="grid grid-cols-2 gap-1 mb-1">
-                             {(['1W', '1M', '3M', 'ALL'] as const).map(opt => (
-                                 <button 
-                                     key={opt}
-                                     onClick={() => { setTrendDateRange(opt); setIsDateMenuOpen(false); }}
-                                     className={`py-2 rounded-lg text-[10px] font-black uppercase tracking-wider ${trendDateRange === opt ? 'bg-chiachia-green text-black' : 'bg-black/40 text-zinc-400 hover:text-white'}`}
-                                 >
-                                     {opt === '1W' ? '1 週' : opt === '1M' ? '1 月' : opt === '3M' ? '3 月' : '全部'}
-                                 </button>
-                             ))}
-                         </div>
-                         <button 
-                             onClick={() => setTrendDateRange('PICK')}
-                             className={`py-2 px-3 rounded-lg text-left text-xs font-bold transition-all ${trendDateRange === 'PICK' ? 'bg-zinc-800 text-chiachia-green border border-chiachia-green/30' : 'text-zinc-400 hover:bg-white/5'}`}
-                         >
-                             自訂範圍...
-                         </button>
-                         
-                         {trendDateRange === 'PICK' && (
-                             <div className="flex flex-col gap-2 p-2 bg-black/40 rounded-xl mt-1 border border-white/5">
-                                 <div className="flex items-center gap-2">
-                                     <span className="text-[9px] text-zinc-500 font-bold w-6">Start</span>
-                                     <input type="date" value={customDateRange.start} onChange={e => setCustomDateRange({...customDateRange, start: e.target.value})} className="bg-zinc-800 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white w-full outline-none" />
-                                 </div>
-                                 <div className="flex items-center gap-2">
-                                     <span className="text-[9px] text-zinc-500 font-bold w-6">End</span>
-                                     <input type="date" value={customDateRange.end} onChange={e => setCustomDateRange({...customDateRange, end: e.target.value})} className="bg-zinc-800 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white w-full outline-none" />
-                                 </div>
-                             </div>
-                         )}
-                     </div>
-                 )}
-             </div>
-         </div>
+                   {isDateMenuOpen && (
+                       <div className="absolute top-full right-0 mt-2 w-48 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-2 z-[60] flex flex-col gap-1 animate-scale-in origin-top-right">
+                           <div className="grid grid-cols-2 gap-1 mb-1">
+                               {(['1W', '1M', '3M', 'ALL'] as const).map(opt => (
+                                   <button 
+                                       key={opt}
+                                       onClick={() => { setTrendDateRange(opt); setIsDateMenuOpen(false); }}
+                                       className={`py-2 rounded-lg text-[10px] font-black uppercase tracking-wider ${trendDateRange === opt ? 'bg-chiachia-green text-black' : 'bg-black/40 text-zinc-400 hover:text-white'}`}
+                                   >
+                                       {opt === '1W' ? '1 週' : opt === '1M' ? '1 月' : opt === '3M' ? '3 月' : '全部'}
+                                   </button>
+                               ))}
+                           </div>
+                           <button 
+                               onClick={() => setTrendDateRange('PICK')}
+                               className={`py-2 px-3 rounded-lg text-left text-xs font-bold transition-all ${trendDateRange === 'PICK' ? 'bg-zinc-800 text-chiachia-green border border-chiachia-green/30' : 'text-zinc-400 hover:bg-white/5'}`}
+                           >
+                               自訂範圍...
+                           </button>
+                           
+                           {trendDateRange === 'PICK' && (
+                               <div className="flex flex-col gap-2 p-2 bg-black/40 rounded-xl mt-1 border border-white/5">
+                                   <div className="flex items-center gap-2">
+                                       <span className="text-[9px] text-zinc-500 font-bold w-6">Start</span>
+                                       <input type="date" value={customDateRange.start} onChange={e => setCustomDateRange({...customDateRange, start: e.target.value})} className="bg-zinc-800 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white w-full outline-none" />
+                                   </div>
+                                   <div className="flex items-center gap-2">
+                                       <span className="text-[9px] text-zinc-500 font-bold w-6">End</span>
+                                       <input type="date" value={customDateRange.end} onChange={e => setCustomDateRange({...customDateRange, end: e.target.value})} className="bg-zinc-800 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white w-full outline-none" />
+                                   </div>
+                                </div>
+                           )}
+                       </div>
+                   )}
+               </div>
+           </div>
 
-         <div className="space-y-6">
-             {/* 🟢 這裡替換成 visibleTrendData (只渲染 10 個日子) */}
-             {visibleTrendData.map((dayData, idx) => (
-                 <button 
-                    key={dayData.date} 
-                    onClick={() => openTrendModal(dayData)}
-                    className="w-full text-left glass-card rounded-[24px] p-5 border-white/5 relative overflow-hidden group transition-all active:scale-[0.98] focus:outline-none"
-                 >
-                     <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
-                         <div className="flex items-center gap-3">
-                             <div className="w-1.5 h-10 bg-chiachia-green rounded-full shadow-glow-green"></div>
-                             <div>
-                                 <div className="text-2xl font-black text-white font-mono leading-none">{format(parseISO(dayData.date), 'yyyy.MM.dd')}</div>
-                                 <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{format(parseISO(dayData.date), 'EEEE')}</div>
-                             </div>
-                         </div>
-                         <div className="flex items-center gap-2">
-                             <div className="text-xs font-black bg-zinc-800 px-2.5 py-1 rounded-lg text-zinc-400">{dayData.riders.length} Riders</div>
-                             <Maximize2 size={16} className="text-zinc-600 group-hover:text-chiachia-green transition-colors"/>
-                         </div>
-                     </div>
+           <div className="space-y-6">
+               {visibleTrendData.map((dayData, idx) => (
+                   <button 
+                      key={dayData.date} 
+                      onClick={() => openTrendModal(dayData)}
+                      className="w-full text-left glass-card rounded-[24px] p-5 border-white/5 relative overflow-hidden group transition-all active:scale-[0.98] focus:outline-none"
+                   >
+                       <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
+                           <div className="flex items-center gap-3">
+                               <div className="w-1.5 h-10 bg-chiachia-green rounded-full shadow-glow-green"></div>
+                               <div>
+                                   <div className="text-2xl font-black text-white font-mono leading-none">{format(parseISO(dayData.date), 'yyyy.MM.dd')}</div>
+                                   <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{format(parseISO(dayData.date), 'EEEE')}</div>
+                               </div>
+                           </div>
+                           <div className="flex items-center gap-2">
+                               <div className="text-xs font-black bg-zinc-800 px-2.5 py-1 rounded-lg text-zinc-400">{dayData.riders.length} Riders</div>
+                               <Maximize2 size={16} className="text-zinc-600 group-hover:text-chiachia-green transition-colors"/>
+                           </div>
+                       </div>
 
-                     <div className="h-44 w-full mb-2 bg-black/20 rounded-xl border border-white/5 p-2 pointer-events-none">
-                         <SimpleComposedChart 
-                             data={dayData.riders} 
-                             xKey="name" 
-                             areaKey="avg" 
-                             lineKeys={[
-                                 { key: 'best', color: '#fbbf24' },
-                                 { key: 'stability', color: '#3b82f6', strokeDasharray: '4 4' }
-                             ]}
-                             showXAxis={true}
-                             xAxisFormatter={(val: any) => String(val)}
-                         />
-                     </div>
-                 </button>
-             ))}
+                       <div className="h-44 w-full mb-2 bg-black/20 rounded-xl border border-white/5 p-2 pointer-events-none">
+                           <SimpleComposedChart 
+                               data={dayData.riders} 
+                               xKey="name" 
+                               areaKey="avg" 
+                               lineKeys={[
+                                   { key: 'best', color: '#fbbf24' },
+                                   { key: 'stability', color: '#3b82f6', strokeDasharray: '4 4' }
+                               ]}
+                               showXAxis={true}
+                               xAxisFormatter={(val: any) => String(val)}
+                           />
+                       </div>
+                   </button>
+               ))}
 
-             {/* 🟢 載入更多日期的按鈕 */}
-             {trendData.length > displayCount && (
-                 <button 
-                    onClick={() => setDisplayCount(prev => prev + 10)}
-                    className="w-full py-4 rounded-[20px] border border-white/10 bg-zinc-900/50 text-zinc-400 text-xs font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 active:scale-95 transition-all hover:bg-zinc-800 hover:text-white"
-                 >
-                    載入更早的日期 ({trendData.length - displayCount}) <ChevronDown size={16}/>
-                 </button>
-             )}
+               {trendData.length > displayCount && (
+                   <button 
+                      onClick={() => setDisplayCount(prev => prev + 10)}
+                      className="w-full py-4 rounded-[20px] border border-white/10 bg-zinc-900/50 text-zinc-400 text-xs font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 active:scale-95 transition-all hover:bg-zinc-800 hover:text-white"
+                   >
+                      載入更早的日期 ({trendData.length - displayCount}) <ChevronDown size={16}/>
+                   </button>
+               )}
 
-             {trendData.length === 0 && (
-                 <div className="py-12 flex flex-col items-center opacity-30">
-                     <Activity size={48} className="text-zinc-500 mb-2"/>
-                     <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">No Data in Range</span>
-                 </div>
-             )}
-         </div>
-      </section>
+               {trendData.length === 0 && (
+                   <div className="py-12 flex flex-col items-center opacity-30">
+                       <Activity size={48} className="text-zinc-500 mb-2"/>
+                       <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">No Data in Range</span>
+                   </div>
+               )}
+           </div>
+        </section>
+      )}
 
-      {trendModal.show && trendModal.data && createPortal(
+      {/* 🟢 3. 詳情彈出對話框：同樣受到權限控制保護（雙重安全確保） */}
+      {canViewRacingStats && trendModal.show && trendModal.data && createPortal(
           <div className="fixed inset-0 z-[60000] flex flex-col bg-zinc-950 animate-slide-up">
               <div className="flex-none flex items-center justify-between px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] border-b border-white/5 bg-zinc-950/90 backdrop-blur-md relative z-10 shadow-2xl">
                   

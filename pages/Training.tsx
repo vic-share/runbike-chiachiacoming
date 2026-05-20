@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { SimpleComposedChart } from '../components/SimpleComposedChart';
 import { UserCircle2, ChevronDown, Plus, X, Trophy, History, Trash2, Edit2, AlertTriangle, Users, UserPlus, Check, Camera, Play, ChevronLeft, CalendarDays, Delete, Save, ChevronUp, ChevronRight, Activity, Zap, Quote, Medal, Flame, Loader2 } from 'lucide-react';
 import { format, differenceInYears, parseISO, subDays, subMonths, isAfter, isValid, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
+// 確保身分檢查工具完美連動
 import { hasRole, ROLES } from '../utils/auth';
 import { useTrainingSync } from '../hooks/useTrainingSync';
 
@@ -17,6 +18,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   });
   const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
 
+  // 🟢 隨機選手狀態 (專屬於剛點進數據分頁的主畫面展示)
   const [randomRider, setRandomRider] = useState<any>(null);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [participatingRiderIds, setParticipatingRiderIds] = useState<string[]>([]);
@@ -40,11 +42,17 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const canRecord = currentUser && (hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.AIDE) || hasRole(currentUser, ROLES.DEV));
   const isAdmin = hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.DEV);
 
+  // 🟢 核心過濾名單：全站只撈取有 RACING 身分的競速選手
   const filteredPeople = useMemo(() => {
-    return people.filter((p: any) => hasRole(p, ROLES.RIDER) && !hasRole(p, ROLES.DEV));
+    return people.filter((p: any) => hasRole(p, ROLES.RACING) && !hasRole(p, ROLES.DEV));
   }, [people]);
 
-  // Deep Link & Randomizer Logic
+  // 定義計時錄製中的當前選手 ID
+  const currentTargetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
+  const riderLastValue = currentTargetId ? localLastValues[currentTargetId] : null;
+  const riderCountOffset = currentTargetId ? (localCountOffsets[currentTargetId] || 0) : 0;
+
+  // Deep Link Logic
   useEffect(() => {
       if (initialExpandedDate) {
           setDateRange('ALL');
@@ -61,45 +69,42 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }
   }, [initialExpandedDate]);
 
+  // 🟢 【需求 1 修正】剛進入數據分頁主頁面時，如果沒有點選任何人，自動隨機抓取一位 Racing 選手展示趨勢
   useEffect(() => {
-      const KEY = 'TRAINING_LAST_RIDER_TIME';
-      const lastTime = localStorage.getItem(KEY);
-      const now = Date.now();
-      const TIMEOUT = 60 * 1000; 
+      if (isRecordingMode) return; // 如果已經是計時模式，不觸發隨機跳轉
       const validPeople = filteredPeople.filter((p: any) => !p.is_hidden);
       if (validPeople.length === 0) return;
-      const shouldRandomize = !activePersonId && (!lastTime || (now - parseInt(lastTime) > TIMEOUT));
-      if (shouldRandomize) {
+      
+      // 如果目前沒指定 activePersonId 且還沒產生過隨機選手
+      if (!activePersonId && !randomRider) {
           const random = validPeople[Math.floor(Math.random() * validPeople.length)];
           if (random) {
-              onSelectPerson(random.id);
-              localStorage.setItem(KEY, String(now));
+              setRandomRider(random);
           }
       }
-  }, [filteredPeople]);
+  }, [filteredPeople, activePersonId, isRecordingMode, randomRider]);
 
   useEffect(() => {
       if (trainingTypes.length > 0 && !selectedType) {
           setSelectedType(trainingTypes[0].id);
       }
-      if (activePersonId) {
+      // 只有從外部(如首頁)明確帶選手 ID 進來時，才在初始化時被動寫入 REC 名單
+      if (activePersonId && participatingRiderIds.length === 0) {
           const pid = String(activePersonId);
-          setParticipatingRiderIds(prev => prev.includes(pid) ? prev : [...prev, pid]);
-          setCurrentRiderId(prev => prev ? prev : pid);
+          setParticipatingRiderIds([pid]);
+          setCurrentRiderId(pid);
       }
-      if (!activePersonId && filteredPeople.length > 0 && !randomRider) {
-          const rand = filteredPeople.filter((p:any) => !p.is_hidden)[Math.floor(Math.random() * filteredPeople.filter((p:any) => !p.is_hidden).length)];
-          if (rand) setRandomRider(rand);
-      }
-  }, [trainingTypes, activePersonId, filteredPeople]);
+  }, [trainingTypes, activePersonId]);
 
+  // 🚀 主頁面展示選手身分源
   const activeRider = useMemo(() => {
       if (!isRecordingMode) {
-          const specific = filteredPeople.find((p: any) => String(p.id) === String(activePersonId));
-          return specific || randomRider || (filteredPeople.length > 0 ? filteredPeople[0] : null);
+          if (activePersonId) return filteredPeople.find((p: any) => String(p.id) === String(activePersonId)) || null;
+          return randomRider || (filteredPeople.length > 0 ? filteredPeople[0] : null);
       }
-      if (currentRiderId) return filteredPeople.find((p: any) => String(p.id) === String(currentRiderId));
-      return filteredPeople.find((p: any) => String(p.id) === String(activePersonId)) || null;
+      if (currentRiderId) return filteredPeople.find((p: any) => String(p.id) === String(currentRiderId)) || null;
+      if (activePersonId) return filteredPeople.find((p: any) => String(p.id) === String(activePersonId)) || null;
+      return null;
   }, [filteredPeople, currentRiderId, activePersonId, isRecordingMode, randomRider]);
 
   const validRiders = useMemo(() => {
@@ -227,21 +232,21 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   }, [todayCountsByRider]);
 
   const sessionRecords = useMemo(() => {
-      const targetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
+      const targetId = currentTargetId;
       if (!targetId) return [];
       const typeId = getSelectedTypeId();
-      return data.filter((d: any) => 
-          String(d.people_id) === String(targetId) && 
-          String(d.training_type_id) === String(typeId) && d.item === 'training'
-      ).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [data, currentRiderId, activePersonId, selectedType]);
+      return data.filter((d: any) => {
+          return String(d.people_id) === String(targetId) && 
+                 String(d.training_type_id) === String(typeId) && 
+                 d.item === 'training';
+      }).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [data, currentRiderId, activePersonId, selectedType, currentTargetId]);
 
   const todaySessionRecords = useMemo(() => {
      const todayStr = format(new Date(), 'yyyy-MM-dd');
      return sessionRecords.filter((r: any) => r.date === todayStr);
   }, [sessionRecords]);
 
-  // --- 關鍵補丁：定義 todayCount 變數 ---
   const todayCount = todaySessionRecords.length;
 
   const todayBestScore = useMemo(() => {
@@ -277,7 +282,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
 
   const handleRecordSubmit = async () => {
       if (!inputValue || parseFloat(inputValue) <= 0) return;
-      const targetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
+      const targetId = currentTargetId;
       if (!targetId) { setShowRiderSelectModal(true); return; }
       setSubmitting(true);
       try {
@@ -287,7 +292,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
           setLocalCountOffsets(prev => ({ ...prev, [targetId]: (prev[targetId] || 0) + 1 }));
           setInputValue('');
           setFeedbackMsg('SAVED');
-          localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now()));
           refreshData(); 
           setTimeout(() => setFeedbackMsg(null), 1500);
       } catch (e) { alert('紀錄失敗'); } finally { setSubmitting(false); }
@@ -306,7 +310,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                   return next; 
               } 
           });
-      } else { onSelectPerson(id); localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now())); setShowRiderSelectModal(false); }
+      } else { onSelectPerson(id); setShowRiderSelectModal(false); }
   };
 
   const handleDeleteRecord = async () => {
@@ -333,116 +337,181 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
     }, 600);
   };
 
-  const currentTargetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
-  const riderLastValue = currentTargetId ? localLastValues[currentTargetId] : null;
-  const riderCountOffset = currentTargetId ? (localCountOffsets[currentTargetId] || 0) : 0;
+  // 🟢 縮放排版按鈕與間距規則
+  const riderGridStyles = useMemo(() => {
+    const count = validRiders.length;
+    if (count <= 2) {
+      return {
+        gridClass: 'grid-cols-1 gap-4',
+        buttonClass: 'h-24 px-6 py-4 border-2',
+        avatarClass: 'w-16 h-16 text-3xl',
+        nameClass: 'text-xl font-black',
+        badgeClass: 'text-sm px-2 py-0.5'
+      };
+    } else if (count <= 4) {
+      return {
+        gridClass: 'grid-cols-2 gap-3',
+        buttonClass: 'h-20 px-4 py-3 border-2',
+        avatarClass: 'w-12 h-12 text-2xl',
+        nameClass: 'text-base font-black',
+        badgeClass: 'text-xs px-1.5'
+      };
+    } else if (count <= 6) {
+      return {
+        gridClass: 'grid-cols-3 gap-2',
+        buttonClass: 'h-16 px-2 py-2 border',
+        avatarClass: 'w-9 h-9 text-lg',
+        nameClass: 'text-xs font-black',
+        badgeClass: 'text-[10px] px-1'
+      };
+    } else {
+      return {
+        gridClass: 'grid-cols-4 gap-1.5',
+        buttonClass: 'h-14 sm:h-16 px-1.5 py-1.5 border',
+        avatarClass: 'w-10 h-10 text-base',
+        nameClass: 'text-[10px] font-black',
+        badgeClass: 'text-[9px] px-1'
+      };
+    }
+  }, [validRiders.length]);
+
+  // 🟢 【需求 2 修正】點選 Start Training 時強制清空預設選手名單
+  const handleStartTrainingClick = () => {
+      setParticipatingRiderIds([]); // 強制清空選手
+      setCurrentRiderId(null);      // 強制不指派當前計時目標
+      setIsRecordingMode(true);     // 啟動錄製模式
+  };
 
   const renderOverview = () => (
       <div className="flex flex-col relative pb-32">
            {canRecord && (
                <div className="px-4 py-6 mt-4 relative z-50">
-                   <button onClick={() => setIsRecordingMode(true)} className="w-full bg-gradient-to-r from-chiachia-green to-emerald-600 text-black h-14 rounded-2xl shadow-[0_0_20px_rgba(57,231,95,0.4)] flex items-center justify-center gap-3 active:scale-[0.98] transition-all group">
+                   {/* 🟢 點擊事件替換為強制清空名單的獨立 Handler */}
+                   <button onClick={handleStartTrainingClick} className="w-full bg-gradient-to-r from-chiachia-green to-emerald-600 text-black h-14 rounded-2xl shadow-[0_0_20px_rgba(57,231,95,0.4)] flex items-center justify-center gap-3 active:scale-[0.98] transition-all group">
                        <Play size={20} fill="black" className="group-hover:scale-110 transition-transform" />
                        <span className="text-xl font-black italic tracking-wider">START TRAINING</span>
                    </button>
                </div>
            )}
-           <div className="relative w-full h-[55vh] shrink-0 mx-auto px-4 z-0">
-               <div className="w-full h-full rounded-[32px] overflow-hidden relative border border-white/5 bg-zinc-900">
-                   {activeRider?.b_url ? ( <img src={activeRider.b_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-900 gap-2"> <Camera size={32} /> <span className="text-xs font-black uppercase tracking-widest">No Cover Photo</span> </div> )}
-                   <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black via-black/60 to-transparent"></div>
-                   <button onClick={() => setShowRiderSelectModal(true)} className="absolute bottom-6 right-5 w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white z-50 border border-white/20 active:scale-95 shadow-lg"> <Users size={20} /> </button>
-                   <div className="absolute bottom-6 left-5 right-16 flex items-end gap-4 z-20">
-                       <div className="w-20 h-20 rounded-full border-2 border-white bg-zinc-950 shadow-2xl overflow-hidden flex items-center justify-center"> {activeRider?.s_url ? ( <img src={activeRider.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className="font-black text-4xl text-white"> {activeRider?.name?.[0] || '?'} </span> )} </div>
-                       <div className="flex-1 min-w-0 pb-1">
-                            <div className="flex items-center gap-2"> <h2 className="text-2xl font-black text-white italic tracking-tight truncate">{activeRider?.name || '---'}</h2> {activeRider && <span className="text-xs bg-white/20 backdrop-blur-md text-white px-2 py-0.5 rounded font-black font-mono">AGE {activeRider.birthday ? differenceInYears(new Date(), new Date(activeRider.birthday)) : '-'}</span>} </div>
-                            {activeRider?.myword && ( <button onClick={() => setShowBioModal(true)} className="text-left w-full group focus:outline-none relative z-40"> <p className="text-sm font-bold text-zinc-300 italic mt-1 group-active:scale-95 transition-all truncate"> "{activeRider.myword}" </p> </button> )}
+
+           {!activeRider ? (
+               <div className="px-4 py-12 flex flex-col items-center justify-center text-center space-y-4 animate-fade-in">
+                   <div className="w-24 h-24 rounded-full bg-zinc-900 border border-dashed border-white/10 flex items-center justify-center text-zinc-500 shadow-inner">
+                       <Users size={40} className="opacity-40 animate-pulse" />
+                   </div>
+                   <div>
+                       <h3 className="text-lg font-black text-white italic tracking-wide">No Rider Selected</h3>
+                       <p className="text-xs text-zinc-500 font-bold mt-1 uppercase tracking-widest">請先點擊下方按鈕或右上角切換選手</p>
+                   </div>
+                   <button 
+                       onClick={() => setShowRiderSelectModal(true)} 
+                       className="px-6 h-12 bg-zinc-900 text-sm font-black uppercase tracking-wider rounded-xl border border-chiachia-green/30 text-chiachia-green shadow-lg active:scale-95 transition-all flex items-center gap-2"
+                   >
+                       <UserPlus size={16}/> 選擇競速組選手
+                   </button>
+               </div>
+           ) : (
+               <>
+                   <div className="relative w-full h-[55vh] shrink-0 mx-auto px-4 z-0">
+                       <div className="w-full h-full rounded-[32px] overflow-hidden relative border border-white/5 bg-zinc-900">
+                           {activeRider?.b_url ? ( <img src={activeRider.b_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-900 gap-2"> <Camera size={32} /> <span className="text-xs font-black uppercase tracking-widest">No Cover Photo</span> </div> )}
+                           {!isRecordingMode && (
+                               <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none"></div>
+                           )}
+                           <button onClick={() => setShowRiderSelectModal(true)} className="absolute bottom-6 right-5 w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white z-50 border border-white/20 active:scale-95 shadow-lg"> <Users size={20} /> </button>
+                           <div className="absolute bottom-6 left-5 right-16 flex items-end gap-4 z-20">
+                               <div className="w-20 h-20 rounded-full border-2 border-white bg-zinc-950 shadow-2xl overflow-hidden flex items-center justify-center"> {activeRider?.s_url ? ( <img src={activeRider.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className="font-black text-4xl text-white"> {activeRider?.name?.[0] || '?'} </span> )} </div>
+                               <div className="flex-1 min-w-0 pb-1">
+                                    <div className="flex items-center gap-2"> <h2 className="text-2xl font-black text-white italic tracking-tight truncate">{activeRider?.name || '---'}</h2> {activeRider && <span className="text-xs bg-white/20 backdrop-blur-md text-white px-2 py-0.5 rounded font-black font-mono">AGE {activeRider.birthday ? differenceInYears(new Date(), new Date(activeRider.birthday)) : '-'}</span>} </div>
+                                    {activeRider?.myword && ( <button onClick={() => setShowBioModal(true)} className="text-left w-full group focus:outline-none relative z-40"> <p className="text-sm font-bold text-zinc-300 italic mt-1 group-active:scale-95 transition-all truncate"> "{activeRider.myword}" </p> </button> )}
+                               </div>
+                           </div>
                        </div>
                    </div>
-               </div>
-           </div>
-           <div className="px-4 -mt-4 relative z-30">
-               <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl flex items-center shadow-2xl overflow-hidden">
-                   <button onClick={handleJumpToLegend} className="flex items-center gap-3 px-4 py-3 pr-5 border-r border-white/10 hover:bg-white/5 transition-colors group text-left min-w-[120px]">
-                       <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20 group-active:scale-90"> <Trophy size={14} /> </div>
-                       <div className="flex flex-col"> <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Personal Best</span> {personalBestRecord ? ( <span className="text-base font-black font-mono text-white leading-none">{parseFloat(personalBestRecord.value).toFixed(3)}s</span> ) : ( <span className="text-sm font-bold text-zinc-600 leading-none">--.--</span> )} </div>
-                   </button>
-                   <div className="flex-1 overflow-hidden h-[54px] relative px-4 flex items-center">
-                       {honorList.length > 0 ? ( <HonorTicker items={honorList} /> ) : ( <div className="flex items-center gap-2 opacity-30 w-full justify-center"> <Flame size={14} className="text-zinc-500" /> <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Hall of Fame</span> </div> )}
-                   </div>
-               </div>
-           </div>
-           <div className="px-4 py-4 space-y-4 relative z-10 mt-2">
-               <div className="flex justify-between items-center gap-2">
-                   <div className="relative flex-1">
-                       <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="w-full bg-zinc-900 border border-white/10 text-white text-sm font-black uppercase rounded-xl px-3 py-2 pr-8 outline-none appearance-none h-10"> {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} </select>
-                       <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"/>
-                   </div>
-                   <div className="relative flex-1 max-w-[160px] z-50">
-                       <button onClick={() => setIsDateMenuOpen(!isDateMenuOpen)} className={`relative flex items-center justify-between px-3 h-10 w-full rounded-xl border transition-all ${isDateMenuOpen ? 'bg-zinc-800 border-white/20 text-white' : 'bg-zinc-900/60 border-white/5 text-zinc-500'}`}>
-                           <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                               <CalendarDays size={14} className="shrink-0" />
-                               <span className="text-xs font-black uppercase tracking-wider truncate">
-                                   {dateRange === 'PICK' ? `${format(parseISO(customDateRange.start), 'MM/dd')} - ${format(parseISO(customDateRange.end), 'MM/dd')}` : (dateRange === '1W' ? '最近 1 週' : dateRange === '1M' ? '最近 1 月' : dateRange === '3M' ? '最近 3 月' : '全部時間')}
-                               </span>
+                   <div className="px-4 -mt-4 relative z-30">
+                       <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl flex items-center shadow-2xl overflow-hidden">
+                           <button onClick={handleJumpToLegend} className="flex items-center gap-3 px-4 py-3 pr-5 border-r border-white/10 hover:bg-white/5 transition-colors group text-left min-w-[120px]">
+                               <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20 group-active:scale-90"> <Trophy size={14} /> </div>
+                               <div className="flex flex-col"> <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Personal Best</span> {personalBestRecord ? ( <span className="text-base font-black font-mono text-white leading-none">{parseFloat(personalBestRecord.value).toFixed(3)}s</span> ) : ( <span className="text-sm font-bold text-zinc-600 leading-none">--.--</span> )} </div>
+                           </button>
+                           <div className="flex-1 overflow-hidden h-[54px] relative px-4 flex items-center">
+                               {honorList.length > 0 ? ( <HonorTicker items={honorList} /> ) : ( <div className="flex items-center gap-2 opacity-30 w-full justify-center"> <Flame size={14} className="text-zinc-500" /> <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Hall of Fame</span> </div> )}
                            </div>
-                           <ChevronDown size={12} className={`shrink-0 transition-transform ${isDateMenuOpen ? 'rotate-180' : ''}`} />
-                       </button>
-                       {isDateMenuOpen && (
-                           <div className="absolute top-full right-0 mt-2 w-48 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-2 z-[60] flex flex-col gap-1 animate-scale-in origin-top-right">
-                               <div className="grid grid-cols-2 gap-1 mb-1">
-                                   {(['1W', '1M', '3M', 'ALL'] as const).map(opt => (
-                                       <button key={opt} onClick={() => { setDateRange(opt); setIsDateMenuOpen(false); }} className={`py-2 rounded-lg text-[10px] font-black uppercase tracking-wider ${dateRange === opt ? 'bg-chiachia-green text-black' : 'bg-black/40 text-zinc-400'}`}> {opt === '1W' ? '1 週' : opt === '1M' ? '1 月' : opt === '3M' ? '3 月' : '全部'} </button>
-                                   ))}
-                               </div>
-                               <button onClick={() => setDateRange('PICK')} className={`py-2 px-3 rounded-lg text-left text-xs font-bold ${dateRange === 'PICK' ? 'bg-zinc-800 text-chiachia-green' : 'text-zinc-400'}`}> 自訂範圍... </button>
-                               {dateRange === 'PICK' && (
-                                   <div className="flex flex-col gap-2 p-2 bg-black/40 rounded-xl mt-1 border border-white/5">
-                                       <div className="flex items-center gap-2"> <span className="text-[9px] text-zinc-500 font-bold w-6">Start</span> <input type="date" value={customDateRange.start} onChange={e => setCustomDateRange({...customDateRange, start: e.target.value})} className="bg-zinc-800 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white w-full" /> </div>
-                                       <div className="flex items-center gap-2"> <span className="text-[9px] text-zinc-500 font-bold w-6">End</span> <input type="date" value={customDateRange.end} onChange={e => setCustomDateRange({...customDateRange, end: e.target.value})} className="bg-zinc-800 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white w-full" /> </div>
-                                   </div>
-                               )}
-                           </div>
-                       )}
+                       </div>
                    </div>
-               </div>
-               <div className="h-44 w-full shrink-0">
-                    <SimpleComposedChart data={chartData} xKey="date" areaKey="avg" lineKeys={[{ key: 'best', color: '#fbbf24' }, { key: 'stability', color: '#3b82f6', strokeDasharray: '4 4' }]} showXAxis={true} xAxisFormatter={(val: any) => String(val)} />
-               </div>
-               <div className="space-y-3">
-                   {groupedRecords.map((group) => {
-                       const isExpanded = expandedDate === group.date;
-                       const dDate = parseISO(group.date);
-                       return (
-                           <div key={group.date} id={`date-card-${group.date}`} className="rounded-2xl bg-zinc-950/40 border border-white/5 overflow-hidden backdrop-blur-sm">
-                               <button onClick={() => setExpandedDate(isExpanded ? null : group.date)} className={`w-full flex items-stretch text-left ${isExpanded ? 'bg-zinc-900/50' : ''}`}>
-                                   <div className={`w-20 flex flex-col items-center justify-center p-2 border-r border-white/5 ${isExpanded ? 'bg-chiachia-green/10 text-chiachia-green' : 'bg-zinc-900 text-zinc-500'}`}> <span className="text-[10px] font-black uppercase tracking-wider">{format(dDate, 'MMM')}</span> <span className="text-2xl font-black font-mono leading-none">{format(dDate, 'dd')}</span> </div>
-                                   <div className="flex-1 flex items-center p-2 gap-4 min-w-0 overflow-x-auto no-scrollbar">
-                                       <div className="flex-1 min-w-[70px] flex flex-col items-center justify-center gap-0.5"> <div className="flex items-center gap-1 text-[10px] font-black text-zinc-600 uppercase tracking-wider"><Activity size={10} className="text-chiachia-green"/> Avg</div> <div className="text-base font-black text-white font-mono leading-none">{group.avg.toFixed(3)}s</div> </div>
-                                       <div className="flex-1 min-w-[70px] flex flex-col items-center justify-center gap-0.5"> <div className="flex items-center gap-1 text-[10px] font-black text-zinc-600 uppercase tracking-wider"><Trophy size={10} className="text-amber-400"/> Best</div> <div className="text-base font-black text-white font-mono leading-none">{group.best.toFixed(3)}s</div> </div>
-                                       <div className="flex-1 min-w-[70px] flex flex-col items-center justify-center gap-0.5"> <div className="flex items-center gap-1 text-[10px] font-black text-zinc-600 uppercase tracking-wider"><Zap size={10} className="text-blue-400"/> Stability</div> <div className="text-base font-black text-white font-mono leading-none">{group.stability.toFixed(0)}</div> </div>
+                   <div className="px-4 py-4 space-y-4 relative z-10 mt-2">
+                       <div className="flex justify-between items-center gap-2">
+                           <div className="relative flex-1">
+                               <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="w-full bg-zinc-900 border border-white/10 text-white text-sm font-black uppercase rounded-xl px-3 py-2 pr-8 outline-none appearance-none h-10"> {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} </select>
+                               <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"/>
+                           </div>
+                           <div className="relative flex-1 max-w-[160px] z-50">
+                               <button onClick={() => setIsDateMenuOpen(!isDateMenuOpen)} className={`relative flex items-center justify-between px-3 h-10 w-full rounded-xl border transition-all ${isDateMenuOpen ? 'bg-zinc-800 border-white/20 text-white' : 'bg-zinc-900/60 border-white/5 text-zinc-500'}`}>
+                                   <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+                                       <CalendarDays size={14} className="shrink-0" />
+                                       <span className="text-xs font-black uppercase tracking-wider truncate">
+                                           {dateRange === 'PICK' ? `${format(parseISO(customDateRange.start), 'MM/dd')} - ${format(parseISO(customDateRange.end), 'MM/dd')}` : (dateRange === '1W' ? '最近 1 週' : dateRange === '1M' ? '最近 1 月' : dateRange === '3M' ? '最近 3 月' : '全部時間')}
+                                       </span>
                                    </div>
-                                   <div className="w-8 flex items-center justify-center text-zinc-600"> {isExpanded ? <ChevronUp size={20}/> : <ChevronRight size={20}/>} </div>
+                                   <ChevronDown size={12} className={`shrink-0 transition-transform ${isDateMenuOpen ? 'rotate-180' : ''}`} />
                                </button>
-                               {isExpanded && (
-                                   <div className="border-t border-white/5 bg-black/20 p-2 space-y-1 max-h-60 overflow-y-auto no-scrollbar">
-                                       {group.runs.map((r: any, idx: number) => {
-                                           const isEditing = editingHistoryId === r.id;
-                                           const runNumber = group.runs.length - idx; 
-                                           return (
-                                               <div key={r.id} id={`record-${r.id}`} className="flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors">
-                                                   <div className="flex items-center gap-3"> <span className="text-[10px] font-mono text-zinc-600 w-6 text-center">#{runNumber}</span> {isEditing ? ( <input type="number" autoFocus value={editHistoryValue} onChange={(e) => setEditHistoryValue(e.target.value)} className="w-20 bg-black border border-white/20 rounded-lg px-2 py-1 text-white font-mono font-bold text-sm text-center" /> ) : ( <span className={`text-base font-mono font-black ${parseFloat(r.value) === group.best ? 'text-amber-400' : 'text-zinc-300'}`}> {parseFloat(r.value).toFixed(3)}s </span> )} </div>
-                                                   {isAdmin && ( <div className="flex items-center gap-1"> {isEditing ? ( <> <button onClick={() => handleSaveEdit(r)} className="p-1.5 bg-chiachia-green text-black rounded-lg"><Save size={14}/></button> <button onClick={() => setEditingHistoryId(null)} className="p-1.5 bg-zinc-700 text-zinc-400 rounded-lg"><X size={14}/></button> </> ) : ( <> <button onClick={() => { setEditingHistoryId(r.id); setEditHistoryValue(r.value); }} className="p-1.5 text-zinc-500"><Edit2 size={14}/></button> <button onClick={() => setDeleteConfirm({show: true, id: r.id})} className="p-1.5 text-zinc-500"><Trash2 size={14}/></button> </> )} </div> )}
-                                               </div>
-                                           );
-                                       })}
+                               {isDateMenuOpen && (
+                                   <div className="absolute top-full right-0 mt-2 w-48 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-2 z-[60] flex flex-col gap-1 animate-scale-in origin-top-right">
+                                       <div className="grid grid-cols-2 gap-1 mb-1">
+                                           {(['1W', '1M', '3M', 'ALL'] as const).map(opt => (
+                                               <button key={opt} onClick={() => { setDateRange(opt); setIsDateMenuOpen(false); }} className={`py-2 rounded-lg text-[10px] font-black uppercase tracking-wider ${dateRange === opt ? 'bg-chiachia-green text-black' : 'bg-black/40 text-zinc-400'}`}> {opt === '1W' ? '1 週' : opt === '1M' ? '1 月' : opt === '3M' ? '3 月' : '全部'} </button>
+                                           ))}
+                                       </div>
+                                       <button onClick={() => setDateRange('PICK')} className={`py-2 px-3 rounded-lg text-left text-xs font-bold ${dateRange === 'PICK' ? 'bg-zinc-800 text-chiachia-green' : 'text-zinc-400'}`}> 自訂範圍... </button>
+                                       {dateRange === 'PICK' && (
+                                           <div className="flex flex-col gap-2 p-2 bg-black/40 rounded-xl mt-1 border border-white/5">
+                                               <div className="flex items-center gap-2"> <span className="text-[9px] text-zinc-500 font-bold w-6">Start</span> <input type="date" value={customDateRange.start} onChange={e => setCustomDateRange({...customDateRange, start: e.target.value})} className="bg-zinc-800 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white w-full" /> </div>
+                                               <div className="flex items-center gap-2"> <span className="text-[9px] text-zinc-500 font-bold w-6">End</span> <input type="date" value={customDateRange.end} onChange={e => setCustomDateRange({...customDateRange, end: e.target.value})} className="bg-zinc-800 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white w-full" /> </div>
+                                           </div>
+                                       )}
                                    </div>
                                )}
                            </div>
-                       );
-                   })}
-               </div>
-           </div>
+                       </div>
+                       <div className="h-44 w-full shrink-0">
+                            <SimpleComposedChart data={chartData} xKey="date" areaKey="avg" lineKeys={[{ key: 'best', color: '#fbbf24' }, { key: 'stability', color: '#3b82f6', strokeDasharray: '4 4' }]} showXAxis={true} xAxisFormatter={(val: any) => String(val)} />
+                       </div>
+                       <div className="space-y-3">
+                           {groupedRecords.map((group) => {
+                               const isExpanded = expandedDate === group.date;
+                               const dDate = parseISO(group.date);
+                               return (
+                                   <div key={group.date} id={`date-card-${group.date}`} className="rounded-2xl bg-zinc-950/40 border border-white/5 overflow-hidden backdrop-blur-sm">
+                                       <button onClick={() => setExpandedDate(isExpanded ? null : group.date)} className={`w-full flex items-stretch text-left ${isExpanded ? 'bg-zinc-900/50' : ''}`}>
+                                           <div className={`w-20 flex flex-col items-center justify-center p-2 border-r border-white/5 ${isExpanded ? 'bg-chiachia-green/10 text-chiachia-green' : 'bg-zinc-900 text-zinc-500'}`}> <span className="text-[10px] font-black uppercase tracking-wider">{format(dDate, 'MMM')}</span> <span className="text-2xl font-black font-mono leading-none">{format(dDate, 'dd')}</span> </div>
+                                           <div className="flex-1 flex items-center p-2 gap-4 min-w-0 overflow-x-auto no-scrollbar">
+                                               <div className="flex-1 min-w-[70px] flex flex-col items-center justify-center gap-0.5"> <div className="flex items-center gap-1 text-[10px] font-black text-zinc-600 uppercase tracking-wider"><Activity size={10} className="text-chiachia-green"/> Avg</div> <div className="text-base font-black text-white font-mono leading-none">{group.avg.toFixed(3)}s</div> </div>
+                                               <div className="flex-1 min-w-[70px] flex flex-col items-center justify-center gap-0.5"> <div className="flex items-center gap-1 text-[10px] font-black text-zinc-600 uppercase tracking-wider"><Trophy size={10} className="text-amber-400"/> Best</div> <div className="text-base font-black text-white font-mono leading-none">{group.best.toFixed(3)}s</div> </div>
+                                               <div className="flex-1 min-w-[70px] flex flex-col items-center justify-center gap-0.5"> <div className="flex items-center gap-1 text-[10px] font-black text-zinc-600 uppercase tracking-wider"><Zap size={10} className="text-blue-400"/> Stability</div> <div className="text-base font-black text-white font-mono leading-none">{group.stability.toFixed(0)}</div> </div>
+                                           </div>
+                                           <div className="w-8 flex items-center justify-center text-zinc-600"> {isExpanded ? <ChevronUp size={20}/> : <ChevronRight size={20}/>} </div>
+                                       </button>
+                                       {isExpanded && (
+                                           <div className="border-t border-white/5 bg-black/20 p-2 space-y-1 max-h-60 overflow-y-auto no-scrollbar">
+                                               {group.runs.map((r: any, idx: number) => {
+                                                   const isEditing = editingHistoryId === r.id;
+                                                   const runNumber = group.runs.length - idx; 
+                                                   return (
+                                                       <div key={r.id} id={`record-${r.id}`} className="flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors">
+                                                           <div className="flex items-center gap-3"> <span className="text-[10px] font-mono text-zinc-600 w-6 text-center">#{runNumber}</span> {isEditing ? ( <input type="number" autoFocus value={editHistoryValue} onChange={(e) => setEditHistoryValue(e.target.value)} className="w-20 bg-black border border-white/20 rounded-lg px-2 py-1 text-white font-mono font-bold text-sm text-center" /> ) : ( <span className={`text-base font-mono font-black ${parseFloat(r.value) === group.best ? 'text-amber-400' : 'text-zinc-300'}`}> {parseFloat(r.value).toFixed(3)}s </span> )} </div>
+                                                           {isAdmin && ( <div className="flex items-center gap-1"> {isEditing ? ( <> <button onClick={() => handleSaveEdit(r)} className="p-1.5 bg-chiachia-green text-black rounded-lg"><Save size={14}/></button> <button onClick={() => setEditingHistoryId(null)} className="p-1.5 bg-zinc-700 text-zinc-400 rounded-lg"><X size={14}/></button> </> ) : ( <> <button onClick={() => { setEditingHistoryId(r.id); setEditHistoryValue(r.value); }} className="p-1.5 text-zinc-500"><Edit2 size={14}/></button> <button onClick={() => setDeleteConfirm({show: true, id: r.id})} className="p-1.5 text-zinc-500"><Trash2 size={14}/></button> </> )} </div> )}
+                                                       </div>
+                                                   );
+                                               })}
+                                           </div>
+                                       )}
+                                   </div>
+                               );
+                           })}
+                       </div>
+                   </div>
+               </>
+           )}
       </div>
   );
 
@@ -451,57 +520,112 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
         {renderOverview()}
         {isRecordingMode && createPortal(
           <div className="fixed inset-0 z-[50000] bg-zinc-950 flex flex-col pb-[env(safe-area-inset-bottom)] pt-[calc(env(safe-area-inset-top)+10px)]">
-               <div className="flex items-center justify-between p-4 shrink-0 h-16 bg-gradient-to-b from-black to-zinc-950 relative">
+               {/* 頂部 Header */}
+               <div className="flex items-center justify-between p-4 shrink-0 h-16 bg-gradient-to-b from-black to-zinc-950 relative border-b border-white/5">
                     <button onClick={() => setIsRecordingMode(false)} className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 border border-white/5"> <ChevronLeft size={20} /> </button>
                     <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1.5 rounded-full border border-white/5 absolute left-1/2 -translate-x-1/2"> <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div> <span className="text-white text-xs font-black italic tracking-widest">REC</span> </div>
                     <button onClick={() => setShowHistoryModal({show: true})} className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 border border-white/5"> <History size={18} /> </button>
                </div>
-               <div className="shrink-0 flex flex-col items-center justify-start pb-2 border-b border-white/5 bg-zinc-950 relative z-10">
-                   <div className="relative inline-block z-20 mb-1"> <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="appearance-none bg-zinc-900/50 border border-white/10 text-zinc-400 text-sm font-black uppercase tracking-widest py-1.5 pl-3 pr-6 rounded-full outline-none text-center"> {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} </select> <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" size={14} /> </div>
-                   <div className="flex items-center gap-4 mb-1"> 
+
+               {/* 上方 HUD 計時面板區塊 */}
+               {/* 🟢 【需求 3 修正】優化排版去除溢出背景，絕對不渲染任何遮罩，杜絕黑條阻擋選手點擊 */}
+               <div className="shrink-0 flex flex-col items-center justify-start py-3 bg-zinc-950 relative border-b border-white/5">
+                   <div className="relative inline-block z-20 mb-1.5"> 
+                       <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="appearance-none bg-zinc-900/80 border border-white/10 text-zinc-300 text-sm font-black uppercase tracking-widest py-1.5 pl-4 pr-7 rounded-full outline-none text-center"> 
+                           {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} 
+                       </select> 
+                       <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" size={14} /> 
+                   </div>
+                   
+                   <div className="flex items-center gap-4 mb-1.5"> 
                        {(riderLastValue || lastRecordValue) && ( 
-                           <div className="text-xs font-black text-zinc-600 font-mono flex items-center gap-1.5 px-2 py-0.5 rounded-lg"> 
+                           <div className="text-[10px] font-black text-zinc-500 font-mono flex items-center gap-1.5 px-2 py-0.5 rounded-lg"> 
                                <span>PREV</span> 
-                               <span className="text-zinc-400">{parseFloat(riderLastValue || lastRecordValue || '0').toFixed(3)}s</span> 
+                               <span className="text-zinc-300">{parseFloat(riderLastValue || lastRecordValue || '0').toFixed(3)}s</span> 
                            </div> 
                        )} 
-                       <div className="text-xs font-black text-zinc-600 font-mono flex items-center gap-1.5 bg-zinc-900/40 px-2 py-0.5 rounded-lg border border-white/5"> 
+                       <div className="text-[10px] font-black text-zinc-500 font-mono flex items-center gap-1.5 bg-zinc-900/60 px-2.5 py-0.5 rounded-lg border border-white/5"> 
                            <span>TODAY</span> 
                            <span className="text-chiachia-green">{todayCount + riderCountOffset}</span> 
                        </div> 
                    </div>
-                   <div className="relative w-full text-center px-4"> <span className={`font-mono font-black tracking-tighter leading-none text-white transition-all ${inputValue.length > 4 ? 'text-6xl' : 'text-7xl'}`}> {inputValue || '0.00'} </span> <span className="text-2xl font-black text-zinc-700 ml-1 italic absolute bottom-4">s</span> </div>
-                   <div className="h-6 flex flex-col items-center justify-center w-full mt-1"> {feedbackMsg && ( <div className="bg-chiachia-green text-black px-4 py-1 rounded-full text-[10px] font-black tracking-widest animate-scale-in"> {feedbackMsg} </div> )} </div>
+                   
+                   <div className="relative w-full text-center px-4"> 
+                       <span className={`font-mono font-black tracking-tighter leading-none text-white transition-all ${inputValue.length > 4 ? 'text-6xl' : 'text-7xl'}`}> 
+                           {inputValue || '0.00'} 
+                       </span> 
+                       <span className="text-2xl font-black text-zinc-700 ml-1 italic absolute bottom-3">s</span> 
+                   </div>
+                   
+                   <div className="h-6 flex flex-col items-center justify-center w-full mt-1"> 
+                       {feedbackMsg && ( <div className="bg-chiachia-green text-black px-4 py-1 rounded-full text-[10px] font-black tracking-widest animate-scale-in"> {feedbackMsg} </div> )} 
+                   </div>
                </div>
-               <div className="flex-1 min-h-0 bg-black relative w-full overflow-y-auto no-scrollbar flex flex-col">
-                   <div className="flex-grow w-full flex flex-col p-2 min-h-0">
+               
+               {/* 選手選擇列表區塊：限高排版 */}
+               {/* 🟢 【需求 3 修正】去除所有遮罩子層，加強 z-index 控制，確保打勾按鈕點擊完全通暢 */}
+               <div className="flex-1 min-h-0 bg-black relative w-full flex flex-col z-20">
+                   {/* 滾動視窗限高限制，超出 8 人流暢滑動 */}
+                   <div className="flex-grow w-full flex flex-col p-2 min-h-0 max-h-[175px] sm:max-h-[195px] overflow-y-auto no-scrollbar relative z-30">
                        {validRiders.length === 0 ? (
-                           <div className="flex-1 flex items-center justify-center"> <button onClick={() => setShowRiderSelectModal(true)} className="w-32 h-32 rounded-full bg-zinc-900 border border-white/10 flex flex-col items-center justify-center gap-2"> <Users size={32} className="text-zinc-500"/> <span className="text-xs font-black text-zinc-500 uppercase tracking-widest">Select Rider</span> <div className="w-8 h-8 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green mt-1"> <Plus size={20} strokeWidth={3} /> </div> </button> </div>
+                           <div className="flex-1 flex items-center justify-center py-4"> 
+                               <button onClick={() => setShowRiderSelectModal(true)} className="w-28 h-28 rounded-full bg-zinc-900 border border-white/10 flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-all"> 
+                                   <Users size={28} className="text-zinc-500"/> 
+                                   <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Select Rider</span> 
+                                   <div className="w-7 h-7 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green mt-0.5"> <Plus size={16} strokeWidth={3} /> </div> 
+                               </button> 
+                           </div>
                        ) : (
-                           <div className="grid grid-cols-4 gap-x-1 gap-y-2 content-start py-2">
+                           <div className={`grid content-start py-1 relative z-40 ${riderGridStyles.gridClass}`}>
                                {validRiders.map((p: any) => { 
                                     const pid = String(p.id); 
                                     const isActive = currentRiderId === pid; 
                                     const baseCount = todayCountsByRider[pid] || 0;
                                     const displayCount = baseCount + (localCountOffsets[pid] || 0);
                                     return ( 
-                                         <button key={pid} onClick={() => setCurrentRiderId(pid)} className={`relative group flex flex-col items-center gap-1.5 ${isActive ? 'scale-105 z-10' : 'opacity-60 scale-95'}`}> 
-                                             <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 bg-zinc-900 relative flex items-center justify-center mx-auto ${isActive ? 'border-chiachia-green shadow-[0_0_15px_rgba(57,231,95,0.6)]' : 'border-zinc-800'}`}> 
-                                                 {p.s_url ? ( <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className={`text-xl font-black ${isActive ? 'text-chiachia-green' : 'text-zinc-600'}`}> {p.name?.[0]} </span> )} 
+                                         <button 
+                                            key={pid} 
+                                            onClick={() => setCurrentRiderId(pid)} 
+                                            className={`relative group flex items-center justify-center rounded-2xl transition-all ${riderGridStyles.buttonClass} ${
+                                                isActive 
+                                                ? 'bg-chiachia-green/10 border-chiachia-green text-white scale-[1.02] z-50 shadow-[0_0_15px_rgba(57,231,95,0.25)]' 
+                                                : 'bg-zinc-900/50 border-white/5 text-zinc-500 opacity-60 scale-95'
+                                            }`}
+                                         > 
+                                             <div className={`rounded-full overflow-hidden shrink-0 relative flex items-center justify-center mr-2.5 border ${
+                                                 isActive ? 'border-chiachia-green' : 'border-zinc-800'
+                                             } ${riderGridStyles.avatarClass}`}> 
+                                                 {p.s_url ? ( <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className="font-black"> {p.name?.[0]} </span> )} 
                                              </div> 
-                                             <div className="flex items-center justify-center gap-1 max-w-full px-1">
-                                                 <span className={`text-[10px] font-black truncate ${isActive ? 'text-chiachia-green' : 'text-zinc-500'}`}> {p.name} </span> 
-                                                 {displayCount > 0 && ( <span className={`text-[9px] font-black px-1 rounded ${isActive ? 'bg-chiachia-green text-black' : 'bg-zinc-800 text-zinc-400'}`}> {displayCount} </span> )}
+                                             
+                                             <div className="flex flex-col items-start min-w-0 max-w-[60%]">
+                                                 <span className={`leading-tight truncate w-full text-left ${riderGridStyles.nameClass} ${isActive ? 'text-chiachia-green' : 'text-zinc-400'}`}> 
+                                                     {p.name} 
+                                                 </span> 
+                                                 {displayCount > 0 && ( 
+                                                     <span className={`mt-0.5 font-mono font-black rounded text-center shrink-0 ${riderGridStyles.badgeClass} ${
+                                                         isActive ? 'bg-chiachia-green text-black shadow-sm' : 'bg-zinc-800 text-zinc-400'
+                                                     }`}> 
+                                                         {displayCount}趟
+                                                     </span> 
+                                                 )}
                                              </div>
                                          </button> 
                                     ); 
-                               })}
-                               <button onClick={() => setShowRiderSelectModal(true)} className="relative group flex flex-col items-center gap-1.5"> <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-dashed border-zinc-700 bg-zinc-900/50 flex items-center justify-center mx-auto"> <Plus size={24} className="text-zinc-500" strokeWidth={3} /> </div> </button>
+                                })}
+                                <button 
+                                    onClick={() => setShowRiderSelectModal(true)} 
+                                    className={`flex items-center justify-center rounded-2xl border-2 border-dashed border-zinc-800 bg-zinc-900/20 text-zinc-500 hover:text-white transition-colors scale-95 opacity-50 ${riderGridStyles.buttonClass}`}
+                                > 
+                                    <Plus size={20} strokeWidth={3} /> 
+                                </button>
                            </div>
                        )}
                    </div>
                </div>
-               <div className="flex-none bg-zinc-950 border-t border-white/10 relative z-30 pb-4 pt-2 shadow-[0_-10px_40px_rgba(0,0,0,1)]">
+               
+               {/* 底部鍵盤區塊 */}
+               <div className="flex-none bg-zinc-950 border-t border-white/10 relative z-50 pb-4 pt-2 shadow-[0_-10px_40px_rgba(0,0,0,1)]">
                    <div className="grid grid-cols-3 gap-1 px-4"> {[1,2,3,4,5,6,7,8,9,'.',0].map(n => ( <button key={n} onClick={() => handleDigitPress(String(n))} className="h-14 bg-zinc-900 rounded-xl text-3xl font-black text-white active:bg-zinc-800 active:scale-95 flex items-center justify-center border border-white/5"> {n} </button> ))} <button onClick={() => setInputValue(prev => prev.slice(0, -1))} className="h-14 bg-zinc-900/50 rounded-xl text-xl font-black text-rose-500 flex items-center justify-center border border-white/5 uppercase"> <Delete size={28} /> </button> </div>
                    <div className="px-4 pt-2"> <button onClick={handleRecordSubmit} disabled={submitting || !inputValue} className="w-full h-14 bg-gradient-to-r from-chiachia-green to-emerald-600 text-black font-black text-2xl italic tracking-widest rounded-xl shadow-[0_0_20px_rgba(57,231,95,0.4)] active:scale-[0.98] transition-all uppercase flex items-center justify-center gap-3 disabled:opacity-30"> {submitting ? <Loader2 className="animate-spin" /> : 'ENTER RECORD'} </button> </div>
                </div>

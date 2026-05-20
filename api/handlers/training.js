@@ -1,6 +1,30 @@
+// api/handlers/training.js
+// 🟢 移除原本報錯的 import，改用最純粹的陣列解析
+
 export const handleTraining = async ({ request, env, url, path, method, getDB, TEAM_ID, corsHeaders }) => {
+    // 1. 解析目前登入使用者的 roles (相容字串與陣列)
+    const user = request.user || null;
+    let userRoles = [];
+    if (user && user.roles) {
+        if (Array.isArray(user.roles)) {
+            userRoles = user.roles;
+        } else if (typeof user.roles === 'string') {
+            try { userRoles = JSON.parse(user.roles); } catch (e) { userRoles = []; }
+        }
+    }
+
+    // 2. 核心身分判斷：只要你是 DEV, COACH, AIDE, 或是符合 RACING 身分的選手，就能放行
+    const canViewRacingStats = userRoles.some(role => 
+        ['DEV', 'COACH', 'AIDE', 'RACING'].includes(role)
+    );
+
     if (path === "/api/training-records") {
         if (method === "GET") { 
+            // 🟢 安全防護：沒有前述 4 種身分的人（例如一般 RIDER），直接擋掉
+            if (!canViewRacingStats) {
+                return Response.json({ success: false, msg: "Permission denied" }, { status: 403, headers: corsHeaders });
+            }
+
             // 接收前端傳來的參數
             const limitDates = parseInt(url.searchParams.get('limit_dates')) || 10;
             const offsetDates = parseInt(url.searchParams.get('offset_dates')) || 0;
@@ -9,20 +33,27 @@ export const handleTraining = async ({ request, env, url, path, method, getDB, T
             const startDate = url.searchParams.get('start_date') || '';
             const endDate = url.searchParams.get('end_date') || '';
 
-            // 1. 建立尋找「目標日期」的過濾條件
-            let dateWhere = `WHERE team_id = ?`;
+            // 3. 建立尋找「目標日期」的過濾條件：只尋找擁有 RACING 角色的選手的日子
+            let dateWhere = `
+                WHERE R.team_id = ? 
+                AND EXISTS (
+                    SELECT 1 FROM People PSub 
+                    WHERE R.people_id = PSub.id 
+                    AND (PSub.roles LIKE '%"RACING"%' OR PSub.roles LIKE '%RACING%')
+                )
+            `;
             const dateParams = [TEAM_ID];
-            if (peopleId) { dateWhere += ` AND people_id = ?`; dateParams.push(peopleId); }
-            if (typeId) { dateWhere += ` AND training_type_id = ?`; dateParams.push(typeId); }
-            if (startDate) { dateWhere += ` AND date >= ?`; dateParams.push(startDate); }
-            if (endDate) { dateWhere += ` AND date <= ?`; dateParams.push(endDate); }
+            if (peopleId) { dateWhere += ` AND R.people_id = ?`; dateParams.push(peopleId); }
+            if (typeId) { dateWhere += ` AND R.training_type_id = ?`; dateParams.push(typeId); }
+            if (startDate) { dateWhere += ` AND R.date >= ?`; dateParams.push(startDate); }
+            if (endDate) { dateWhere += ` AND R.date <= ?`; dateParams.push(endDate); }
 
-            // 2. 利用 CTE (Common Table Expression) 先找出符合條件的 10 個日子，再把這 10 天的詳細數據全部 JOIN 出來
+            // 4. 利用 CTE 先找出符合條件的 10 個日子，JOIN 時再次確保只撈出有 RACING 身分的選手資料
             let sql = `
                 WITH TargetDates AS (
-                    SELECT DISTINCT date FROM TrainingRecords
+                    SELECT DISTINCT R.date FROM TrainingRecords R
                     ${dateWhere}
-                    ORDER BY date DESC LIMIT ? OFFSET ?
+                    ORDER BY R.date DESC LIMIT ? OFFSET ?
                 )
                 SELECT R.id, R.date, R.people_id, R.training_type_id, R.score as value, R.note, T.type_name as name, P.name as person_name, R.created_at, R.client_id
                 FROM TrainingRecords R
@@ -30,9 +61,9 @@ export const handleTraining = async ({ request, env, url, path, method, getDB, T
                 JOIN People P ON R.people_id = P.id
                 JOIN TargetDates TD ON R.date = TD.date
                 WHERE R.team_id = ?
+                AND (P.roles LIKE '%"RACING"%' OR P.roles LIKE '%RACING%')
             `;
             
-            // 組合最終參數
             const finalParams = [...dateParams, limitDates, offsetDates, TEAM_ID];
             if (peopleId) { sql += ` AND R.people_id = ?`; finalParams.push(peopleId); }
             if (typeId) { sql += ` AND R.training_type_id = ?`; finalParams.push(typeId); }
@@ -65,7 +96,12 @@ export const handleTraining = async ({ request, env, url, path, method, getDB, T
     }
 
     if (path === "/api/training-types") {
-        if (method === "GET") return Response.json((await getDB().prepare(`SELECT * FROM TrainingTypes WHERE team_id = ${TEAM_ID}`).all()).results, { headers: corsHeaders });
+        if (method === "GET") {
+            if (!canViewRacingStats) {
+                return Response.json([], { headers: corsHeaders });
+            }
+            return Response.json((await getDB().prepare(`SELECT * FROM TrainingTypes WHERE team_id = ${TEAM_ID}`).all()).results, { headers: corsHeaders });
+        }
         if (method === "POST") {
             const { id, type_name, is_default } = await request.json();
             if (id) await getDB().prepare("UPDATE TrainingTypes SET type_name = ?, is_default = ? WHERE id = ? AND team_id = ?").bind(type_name, is_default?1:0, id, TEAM_ID).run();

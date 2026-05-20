@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { LayoutDashboard, Trophy, Settings as SettingsIcon, ContactRound, CalendarDays, BookOpen, Zap, Bell, X, Check, ExternalLink, CheckCheck, WifiOff } from 'lucide-react';
 import { api } from '../services/api';
+// 🟢 匯入權限檢查工具
 import { hasPermission, PERMISSIONS } from '../utils/auth';
 import { format, formatDistanceToNow } from 'date-fns';
 import { zhTW } from 'date-fns/locale';
@@ -15,6 +16,7 @@ interface LayoutProps {
   courseSystemEnabled?: boolean;
   isOffline?: boolean;
 }
+
 
 const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, title = "Chia Chia Coming!", subtitle, courseSystemEnabled = true, isOffline = false }) => {
   const [user, setUser] = useState(api.getUser());
@@ -178,6 +180,14 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, titl
 
   // Show Courses if system enabled OR user has permission to see it
   const showCoursesNav = courseSystemEnabled || hasPermission(user, PERMISSIONS.COURSE_VIEW_ALL);
+  
+  // 🟢 1. 判斷是否要顯示「數據分頁」按鈕 (Admin, Coach, Aide, Racing 才能看)
+  const showTrainingNav = hasPermission(user, PERMISSIONS.RACING_DATA_VIEW);
+
+  // 🟢 2. 動態計算選單的 Grid 直欄個數
+  let gridColsCount = 3; // 基礎必有：總覽、賽事、設定/選手
+  if (showCoursesNav) gridColsCount += 1;
+  if (showTrainingNav) gridColsCount += 1;
 
   return (
     <div className="relative w-full h-full flex flex-col bg-black text-white overflow-hidden">
@@ -203,7 +213,6 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, titl
       `}</style>
       
       {/* Header */}
-      {/* Height optimized to h-[56px] for a tighter HUD feel */}
       <header className="flex-none z-40 pt-[calc(env(safe-area-inset-top)+4px)] pb-1 border-b border-white/5 bg-black/90 backdrop-blur-md">
         <div className="max-w-md mx-auto px-4 flex flex-col justify-end h-[56px]">
             
@@ -236,7 +245,6 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, titl
                         
                         {unreadCount > 0 && (
                             <div className="absolute -top-1 -right-1 flex flex-col items-center justify-center pointer-events-none">
-                                {/* The "Green Lines" - Glitch effect border/lines */}
                                 <div className="relative flex items-center justify-center">
                                     <div className="absolute inset-0 border border-chiachia-green rounded-[4px] animate-ping opacity-50"></div>
                                     <span className="relative z-10 text-[9px] font-black text-chiachia-green bg-black/90 px-1.5 rounded-[4px] border border-chiachia-green shadow-[0_0_10px_rgba(57,231,95,0.6)] leading-none py-0.5 font-mono">
@@ -251,14 +259,8 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, titl
             
             {/* Bottom: The Circuit Line */}
             <div className="w-full h-[2px] bg-zinc-900 relative overflow-hidden flex items-center">
-                {/* Static Background Trace */}
                 <div className="w-full h-full bg-zinc-800/30"></div>
-
-                {/* The Glitch Electric Current */}
-                {/* Gradient: Transparent -> White (Core) -> Green (Glow) -> Transparent */}
                 <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-transparent via-white to-chiachia-green animate-glitch-current z-20 shadow-[0_0_8px_#39e75f] opacity-80" style={{ mixBlendMode: 'screen' }}></div>
-                
-                {/* End Point Dot */}
                 <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-1 bg-zinc-700 rounded-full"></div>
             </div>
 
@@ -280,9 +282,18 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate, titl
             </div>
         )}
         <div className="max-w-md mx-auto w-full">
-          <div className={`grid ${showCoursesNav ? 'grid-cols-5' : 'grid-cols-4'} items-center px-2 h-[60px]`}>
+          {/* 🟢 這裡修改：利用動態計算出的 grid 欄數樣式 */}
+          <div 
+            className="grid items-center px-2 h-[60px]" 
+            style={{ gridTemplateColumns: `repeat(${gridColsCount}, minmax(0, 1fr))` }}
+          >
             <NavButton active={currentPage === 'dashboard'} onClick={() => onNavigate('dashboard')} icon={<LayoutDashboard />} label="總覽" />
-            <NavButton active={currentPage === 'training'} onClick={() => onNavigate('training')} icon={<ContactRound />} label="數據" />
+            
+            {/* 🟢 這裡加上權限控制保護：沒有觀看權限的選手直接隱藏按鈕 */}
+            {showTrainingNav && (
+                <NavButton active={currentPage === 'training'} onClick={() => onNavigate('training')} icon={<ContactRound />} label="數據" />
+            )}
+            
             {showCoursesNav && (
                 <NavButton active={currentPage === 'courses'} onClick={() => onNavigate('courses')} icon={<CalendarDays />} label="課程" />
             )}
