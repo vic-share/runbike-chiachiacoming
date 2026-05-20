@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { SimpleComposedChart } from '../components/SimpleComposedChart';
 import { UserCircle2, ChevronDown, Plus, X, Trophy, History, Trash2, Edit2, AlertTriangle, Users, UserPlus, Check, Camera, Play, ChevronLeft, CalendarDays, Delete, Save, ChevronUp, ChevronRight, Activity, Zap, Quote, Medal, Flame, Loader2 } from 'lucide-react';
 import { format, differenceInYears, parseISO, subDays, subMonths, isAfter, isValid, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
+// 🟢 確保匯入 ROLES 與權限判斷工具
 import { hasRole, ROLES } from '../utils/auth';
 import { useTrainingSync } from '../hooks/useTrainingSync';
 
@@ -40,8 +41,9 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const canRecord = currentUser && (hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.AIDE) || hasRole(currentUser, ROLES.DEV));
   const isAdmin = hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.DEV);
 
+  // 🟢 核心關鍵修改：原本是過濾 ROLES.RIDER，現在全面改為過濾有 ROLES.RACING 身分的選手
   const filteredPeople = useMemo(() => {
-    return people.filter((p: any) => hasRole(p, ROLES.RIDER) && !hasRole(p, ROLES.DEV));
+    return people.filter((p: any) => hasRole(p, ROLES.RACING) && !hasRole(p, ROLES.DEV));
   }, [people]);
 
   // Deep Link & Randomizer Logic
@@ -253,6 +255,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       return sessionRecords.length > 0 ? sessionRecords[0].value : null;
   }, [sessionRecords]);
 
+  // 🟢 由於前面 filteredPeople 已經是乾淨的 RACING 名單，這裡自動完美繼承
   const sortedPeople = useMemo(() => {
       return filteredPeople.filter((p: any) => !p.is_hidden).sort((a: any, b: any) => a.name.localeCompare(b.name));
   }, [filteredPeople]);
