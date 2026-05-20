@@ -1351,7 +1351,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                 <div className="space-y-1">
                                     <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">角色權限</label>
                                     <div className="flex flex-wrap gap-2">
-                                        {[ROLES.RIDER, ROLES.AIDE, ROLES.COACH].map(role => (
+                                        {[ROLES.RIDER, ROLES.AIDE, ROLES.COACH, ROLES.RACING].map(role => (
                                             <button key={role} onClick={() => handleToggleRole(role)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${formData.roles?.includes(role) ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>
                                                 {role}
                                             </button>
