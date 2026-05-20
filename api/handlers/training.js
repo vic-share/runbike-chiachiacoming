@@ -1,15 +1,27 @@
-import { hasPermission, PERMISSIONS } from '../utils/auth.js'; // 🟢 請確保引用路徑正確
+// api/handlers/training.js
+// 🟢 移除原本報錯的 import，改用最純粹的陣列解析
 
 export const handleTraining = async ({ request, env, url, path, method, getDB, TEAM_ID, corsHeaders }) => {
-    // 🟢 0. 從 request 中嘗試取出驗證後的 user 物件 (假設您前面有 middleware 或驗證機制)
-    // 如果您的架構 user 是掛在 request.user 或傳入的參數中，請在此做對應調整
+    // 1. 解析目前登入使用者的 roles (相容字串與陣列)
     const user = request.user || null;
+    let userRoles = [];
+    if (user && user.roles) {
+        if (Array.isArray(user.roles)) {
+            userRoles = user.roles;
+        } else if (typeof user.roles === 'string') {
+            try { userRoles = JSON.parse(user.roles); } catch (e) { userRoles = []; }
+        }
+    }
+
+    // 2. 核心身分判斷：只要你是 DEV, COACH, AIDE, 或是符合 RACING 身分的選手，就能放行
+    const canViewRacingStats = userRoles.some(role => 
+        ['DEV', 'COACH', 'AIDE', 'RACING'].includes(role)
+    );
 
     if (path === "/api/training-records") {
         if (method === "GET") { 
-            // 🟢 安全防護：如果使用者不具備 RACING_DATA_VIEW 權限 (Admin, Coach, Aide, Racing 以外的人)
-            // 直接擋掉不給撈數據，確保一般 Rider 無法透過繞過前端網址來偷看
-            if (!hasPermission(user, PERMISSIONS.RACING_DATA_VIEW)) {
+            // 🟢 安全防護：沒有前述 4 種身分的人（例如一般 RIDER），直接擋掉
+            if (!canViewRacingStats) {
                 return Response.json({ success: false, msg: "Permission denied" }, { status: 403, headers: corsHeaders });
             }
 
@@ -21,8 +33,7 @@ export const handleTraining = async ({ request, env, url, path, method, getDB, T
             const startDate = url.searchParams.get('start_date') || '';
             const endDate = url.searchParams.get('end_date') || '';
 
-            // 1. 建立尋找「目標日期」的過濾條件
-            // 🟢 關鍵改動：在尋找哪些日子有訓練時，就必須限制「只尋找擁有 RACING 角色的選手」的日子
+            // 3. 建立尋找「目標日期」的過濾條件：只尋找擁有 RACING 角色的選手的日子
             let dateWhere = `
                 WHERE R.team_id = ? 
                 AND EXISTS (
@@ -37,8 +48,7 @@ export const handleTraining = async ({ request, env, url, path, method, getDB, T
             if (startDate) { dateWhere += ` AND R.date >= ?`; dateParams.push(startDate); }
             if (endDate) { dateWhere += ` AND R.date <= ?`; dateParams.push(endDate); }
 
-            // 2. 利用 CTE (Common Table Expression) 先找出符合條件的 10 個日子，再把這 10 天的詳細數據全部 JOIN 出來
-            // 🟢 關鍵改動：在最終 JOIN 時，再次確保 P.roles 包含 RACING，確保非競速選手的資料絕對不會混進來
+            // 4. 利用 CTE 先找出符合條件的 10 個日子，JOIN 時再次確保只撈出有 RACING 身分的選手資料
             let sql = `
                 WITH TargetDates AS (
                     SELECT DISTINCT R.date FROM TrainingRecords R
@@ -54,7 +64,6 @@ export const handleTraining = async ({ request, env, url, path, method, getDB, T
                 AND (P.roles LIKE '%"RACING"%' OR P.roles LIKE '%RACING%')
             `;
             
-            // 組合最終參數
             const finalParams = [...dateParams, limitDates, offsetDates, TEAM_ID];
             if (peopleId) { sql += ` AND R.people_id = ?`; finalParams.push(peopleId); }
             if (typeId) { sql += ` AND R.training_type_id = ?`; finalParams.push(typeId); }
@@ -88,9 +97,8 @@ export const handleTraining = async ({ request, env, url, path, method, getDB, T
 
     if (path === "/api/training-types") {
         if (method === "GET") {
-            // 🟢 安全防護：獲取訓練項目類型同樣只允許有數據查看權的人存取
-            if (!hasPermission(user, PERMISSIONS.RACING_DATA_VIEW)) {
-                return Response.json([], { headers: corsHeaders }); // 無權限回傳空陣列，避免前端報錯
+            if (!canViewRacingStats) {
+                return Response.json([], { headers: corsHeaders });
             }
             return Response.json((await getDB().prepare(`SELECT * FROM TrainingTypes WHERE team_id = ${TEAM_ID}`).all()).results, { headers: corsHeaders });
         }
