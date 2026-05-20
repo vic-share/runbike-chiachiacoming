@@ -15,8 +15,7 @@ export const handleRaces = async ({ request, env, ctx, url, path, method, getDB,
 
     if (path === "/api/race-events") {
         if (method === "GET") { 
-            const limit = parseInt(url.searchParams.get('limit')) || 10;
-            const offset = parseInt(url.searchParams.get('offset')) || 0;
+            // 🟢 方案 A 最佳化：移除後端 limit, offset 變數，改為一次撈取全表「精簡欄位」以達 0 調用翻頁
             const seriesId = url.searchParams.get('series_id');
             const startDate = url.searchParams.get('start_date');
             const endDate = url.searchParams.get('end_date');
@@ -39,7 +38,8 @@ export const handleRaces = async ({ request, env, ctx, url, path, method, getDB,
                 eventParams.push(joinedUserId);
             }
 
-            const events = await getDB().prepare(`SELECT id, team_id, series_id, date, name, location, public_url as url FROM RaceEvents ${eventWhere} ORDER BY date DESC LIMIT ? OFFSET ?`).bind(...eventParams, limit, offset).all(); 
+            // 🟢 關鍵修正：移除了 SQL 中的 LIMIT ? OFFSET ?，讓歷史資料能一次完整回傳
+            const events = await getDB().prepare(`SELECT id, team_id, series_id, date, name, location, public_url as url FROM RaceEvents ${eventWhere} ORDER BY date DESC`).bind(...eventParams).all(); 
             if (events.results.length === 0) return Response.json([], { headers: corsHeaders });
 
             const eventIds = events.results.map(e => e.id);
