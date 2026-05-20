@@ -340,6 +340,48 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const riderLastValue = currentTargetId ? localLastValues[currentTargetId] : null;
   const riderCountOffset = currentTargetId ? (localCountOffsets[currentTargetId] || 0) : 0;
 
+  // 🟢 核心動態排版計算：依據加入上課訓練的人數 (validRiders.length) 縮放按鈕
+  const riderGridStyles = useMemo(() => {
+    const count = validRiders.length;
+    if (count <= 2) {
+      // 1~2 人：極致放大，一列一個
+      return {
+        gridClass: 'grid-cols-1 gap-4',
+        buttonClass: 'h-24 px-6 py-4 border-2',
+        avatarClass: 'w-16 h-16 text-3xl',
+        nameClass: 'text-xl font-black',
+        badgeClass: 'text-sm px-2 py-0.5'
+      };
+    } else if (count <= 4) {
+      // 3~4 人：中大型按鈕，一列二個
+      return {
+        gridClass: 'grid-cols-2 gap-3',
+        buttonClass: 'h-20 px-4 py-3 border-2',
+        avatarClass: 'w-12 h-12 text-2xl',
+        nameClass: 'text-base font-black',
+        badgeClass: 'text-xs px-1.5'
+      };
+    } else if (count <= 6) {
+      // 5~6 人：中型按鈕，一列三個
+      return {
+        gridClass: 'grid-cols-3 gap-2',
+        buttonClass: 'h-16 px-2 py-2 border',
+        avatarClass: 'w-9 h-9 text-lg',
+        nameClass: 'text-xs font-black',
+        badgeClass: 'text-[10px] px-1'
+      };
+    } else {
+      // 7 人以上：回歸精簡HUD尺寸，一列四個
+      return {
+        gridClass: 'grid-cols-4 gap-1.5',
+        buttonClass: 'h-14 sm:h-16 px-1.5 py-1.5 border',
+        avatarClass: 'w-10 h-10 text-base',
+        nameClass: 'text-[10px] font-black',
+        badgeClass: 'text-[9px] px-1'
+      };
+    }
+  }, [validRiders.length]);
+
   const renderOverview = () => (
       <div className="flex flex-col relative pb-32">
            {canRecord && (
@@ -476,30 +518,62 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                    <div className="relative w-full text-center px-4"> <span className={`font-mono font-black tracking-tighter leading-none text-white transition-all ${inputValue.length > 4 ? 'text-6xl' : 'text-7xl'}`}> {inputValue || '0.00'} </span> <span className="text-2xl font-black text-zinc-700 ml-1 italic absolute bottom-4">s</span> </div>
                    <div className="h-6 flex flex-col items-center justify-center w-full mt-1"> {feedbackMsg && ( <div className="bg-chiachia-green text-black px-4 py-1 rounded-full text-[10px] font-black tracking-widest animate-scale-in"> {feedbackMsg} </div> )} </div>
                </div>
+               
+               {/* 🟢 選手選擇列表區塊：加入動態限高（max-h）、自動滾動（overflow-y-auto） */}
                <div className="flex-1 min-h-0 bg-black relative w-full overflow-y-auto no-scrollbar flex flex-col">
-                   <div className="flex-grow w-full flex flex-col p-2 min-h-0">
+                   {/* 🟢 設定彈性 max-h 限制最多兩排的高度，超過 8 人即可平滑下滑滾動 */}
+                   <div className="flex-grow w-full flex flex-col p-2 min-h-0 max-h-[170px] sm:max-h-[190px] overflow-y-auto no-scrollbar">
                        {validRiders.length === 0 ? (
                            <div className="flex-1 flex items-center justify-center"> <button onClick={() => setShowRiderSelectModal(true)} className="w-32 h-32 rounded-full bg-zinc-900 border border-white/10 flex flex-col items-center justify-center gap-2"> <Users size={32} className="text-zinc-500"/> <span className="text-xs font-black text-zinc-500 uppercase tracking-widest">Select Rider</span> <div className="w-8 h-8 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green mt-1"> <Plus size={20} strokeWidth={3} /> </div> </button> </div>
                        ) : (
-                           <div className="grid grid-cols-4 gap-x-1 gap-y-2 content-start py-2">
+                           /* 🟢 這裡綁定上面運作出的動態樣式 riderGridStyles.gridClass */
+                           <div className={`grid content-start py-1 ${riderGridStyles.gridClass}`}>
                                {validRiders.map((p: any) => { 
                                     const pid = String(p.id); 
                                     const isActive = currentRiderId === pid; 
                                     const baseCount = todayCountsByRider[pid] || 0;
                                     const displayCount = baseCount + (localCountOffsets[pid] || 0);
                                     return ( 
-                                         <button key={pid} onClick={() => setCurrentRiderId(pid)} className={`relative group flex flex-col items-center gap-1.5 ${isActive ? 'scale-105 z-10' : 'opacity-60 scale-95'}`}> 
-                                             <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 bg-zinc-900 relative flex items-center justify-center mx-auto ${isActive ? 'border-chiachia-green shadow-[0_0_15px_rgba(57,231,95,0.6)]' : 'border-zinc-800'}`}> 
-                                                 {p.s_url ? ( <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className={`text-xl font-black ${isActive ? 'text-chiachia-green' : 'text-zinc-600'}`}> {p.name?.[0]} </span> )} 
+                                         /* 🟢 綁定動態變更的按鈕高度樣式 */
+                                         <button 
+                                            key={pid} 
+                                            onClick={() => setCurrentRiderId(pid)} 
+                                            className={`relative group flex items-center justify-center rounded-2xl transition-all ${riderGridStyles.buttonClass} ${
+                                                isActive 
+                                                ? 'bg-chiachia-green/10 border-chiachia-green text-white scale-[1.02] z-10 shadow-[0_0_15px_rgba(57,231,95,0.2)]' 
+                                                : 'bg-zinc-900/40 border-white/5 text-zinc-500 opacity-60 scale-95'
+                                            }`}
+                                         > 
+                                             {/* 🟢 頭像外框尺寸動態放大與縮小 */}
+                                             <div className={`rounded-full overflow-hidden shrink-0 relative flex items-center justify-center mr-2.5 border ${
+                                                 isActive ? 'border-chiachia-green' : 'border-zinc-800'
+                                             } ${riderGridStyles.avatarClass}`}> 
+                                                 {p.s_url ? ( <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className="font-black"> {p.name?.[0]} </span> )} 
                                              </div> 
-                                             <div className="flex items-center justify-center gap-1 max-w-full px-1">
-                                                 <span className={`text-[10px] font-black truncate ${isActive ? 'text-chiachia-green' : 'text-zinc-500'}`}> {p.name} </span> 
-                                                 {displayCount > 0 && ( <span className={`text-[9px] font-black px-1 rounded ${isActive ? 'bg-chiachia-green text-black' : 'bg-zinc-800 text-zinc-400'}`}> {displayCount} </span> )}
+                                             
+                                             {/* 🟢 文字與圈數資訊排版與尺寸優化 */}
+                                             <div className="flex flex-col items-start min-w-0 max-w-[60%]">
+                                                 <span className={`leading-tight truncate w-full text-left ${riderGridStyles.nameClass} ${isActive ? 'text-chiachia-green' : 'text-zinc-400'}`}> 
+                                                     {p.name} 
+                                                 </span> 
+                                                 {displayCount > 0 && ( 
+                                                     <span className={`mt-0.5 font-mono font-black rounded text-center shrink-0 ${riderGridStyles.badgeClass} ${
+                                                         isActive ? 'bg-chiachia-green text-black shadow-sm' : 'bg-zinc-800 text-zinc-400'
+                                                     }`}> 
+                                                         {displayCount}趟
+                                                     </span> 
+                                                 )}
                                              </div>
                                          </button> 
                                     ); 
-                               })}
-                               <button onClick={() => setShowRiderSelectModal(true)} className="relative group flex flex-col items-center gap-1.5"> <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-dashed border-zinc-700 bg-zinc-900/50 flex items-center justify-center mx-auto"> <Plus size={24} className="text-zinc-500" strokeWidth={3} /> </div> </button>
+                                })}
+                                {/* 🟢 加人按鈕（+）同步綁定對應寬高，視覺更有一致性 */}
+                                <button 
+                                    onClick={() => setShowRiderSelectModal(true)} 
+                                    className={`flex items-center justify-center rounded-2xl border-2 border-dashed border-zinc-800 bg-zinc-900/20 text-zinc-500 hover:text-white transition-colors scale-95 opacity-50 ${riderGridStyles.buttonClass}`}
+                                > 
+                                    <Plus size={20} strokeWidth={3} /> 
+                                </button>
                            </div>
                        )}
                    </div>
