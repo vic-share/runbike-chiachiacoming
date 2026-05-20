@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { SimpleComposedChart } from '../components/SimpleComposedChart';
 import { UserCircle2, ChevronDown, Plus, X, Trophy, History, Trash2, Edit2, AlertTriangle, Users, UserPlus, Check, Camera, Play, ChevronLeft, CalendarDays, Delete, Save, ChevronUp, ChevronRight, Activity, Zap, Quote, Medal, Flame, Loader2 } from 'lucide-react';
 import { format, differenceInYears, parseISO, subDays, subMonths, isAfter, isValid, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
-// 🟢 確保匯入 ROLES 與權限判斷工具
+// 確保匯入身分檢查工具
 import { hasRole, ROLES } from '../utils/auth';
 import { useTrainingSync } from '../hooks/useTrainingSync';
 
@@ -40,7 +40,12 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const canRecord = currentUser && (hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.AIDE) || hasRole(currentUser, ROLES.DEV));
   const isAdmin = hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.DEV);
 
-  // 🟢 核心關鍵修改：過濾有 ROLES.RACING 身分的選手
+  // 🟢 【移至最前方避免 ReferenceError】定義計時錄製中的當前選手 ID
+  const currentTargetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
+  const riderLastValue = currentTargetId ? localLastValues[currentTargetId] : null;
+  const riderCountOffset = currentTargetId ? (localCountOffsets[currentTargetId] || 0) : 0;
+
+  // 🟢 核心過濾名單：必須同時具有開課權限或 RACING 身分的選手，且非 DEV
   const filteredPeople = useMemo(() => {
     return people.filter((p: any) => hasRole(p, ROLES.RACING) && !hasRole(p, ROLES.DEV));
   }, [people]);
@@ -73,6 +78,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }
   }, [trainingTypes, activePersonId]);
 
+  // activeRider 邏輯：預設為空，避免進頁面自動載入隨機資料
   const activeRider = useMemo(() => {
       if (!isRecordingMode) {
           if (!activePersonId) return null;
@@ -216,7 +222,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                  String(d.training_type_id) === String(typeId) && 
                  d.item === 'training';
       }).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [data, currentRiderId, activePersonId, selectedType]);
+  }, [data, currentRiderId, activePersonId, selectedType, currentTargetId]);
 
   const todaySessionRecords = useMemo(() => {
      const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -258,7 +264,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
 
   const handleRecordSubmit = async () => {
       if (!inputValue || parseFloat(inputValue) <= 0) return;
-      const targetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
+      const targetId = currentTargetId;
       if (!targetId) { setShowRiderSelectModal(true); return; }
       setSubmitting(true);
       try {
@@ -313,10 +319,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
         if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('bg-amber-500/20'); setTimeout(() => el.classList.remove('bg-amber-500/20'), 1500); } 
     }, 600);
   };
-
-  const currentTargetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
-  const riderLastValue = currentTargetId ? localLastValues[currentTargetId] : null;
-  const riderCountOffset = currentTargetId ? (localCountOffsets[currentTargetId] || 0) : 0;
 
   // 縮放排版按鈕與間距規則
   const riderGridStyles = useMemo(() => {
@@ -390,7 +392,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                    <div className="relative w-full h-[55vh] shrink-0 mx-auto px-4 z-0">
                        <div className="w-full h-full rounded-[32px] overflow-hidden relative border border-white/5 bg-zinc-900">
                            {activeRider?.b_url ? ( <img src={activeRider.b_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-900 gap-2"> <Camera size={32} /> <span className="text-xs font-black uppercase tracking-widest">No Cover Photo</span> </div> )}
-                           {/* 🟢 這裡做修正：只有在非 REC 計時錄製模式下，才去加這層大背景陰影。REC 模式時直接不渲染，避免黑條壓到下方的 Grid 按鈕 */}
                            {!isRecordingMode && (
                                <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none"></div>
                            )}
@@ -521,7 +522,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                
                {/* 選手選擇列表區塊 */}
                <div className="flex-1 min-h-0 bg-black relative w-full overflow-y-auto no-scrollbar flex flex-col">
-                   {/* 🟢 這裡移除了原本會強制擋住最下面按鈕點擊、黑黑的一圈不透明遮罩圖層，並優化 max-h 限高 */}
+                   {/* 滾動視窗限高 */}
                    <div className="flex-grow w-full flex flex-col p-2 min-h-0 max-h-[170px] sm:max-h-[190px] overflow-y-auto no-scrollbar">
                        {validRiders.length === 0 ? (
                            <div className="flex-1 flex items-center justify-center"> <button onClick={() => setShowRiderSelectModal(true)} className="w-32 h-32 rounded-full bg-zinc-900 border border-white/10 flex flex-col items-center justify-center gap-2"> <Users size={32} className="text-zinc-500"/> <span className="text-xs font-black text-zinc-500 uppercase tracking-widest">Select Rider</span> <div className="w-8 h-8 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green mt-1"> <Plus size={20} strokeWidth={3} /> </div> </button> </div>
