@@ -71,7 +71,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   const [tab, setTab] = useState<'all' | 'joined' | 'open' | 'finished'>('all');
   const [selectedSeries, setSelectedSeries] = useState<string>('all');
 
-  // 🟢 分頁狀態：預設顯示 10 場賽事
+  // 分頁狀態：預設顯示 10 場賽事
   const [displayCount, setDisplayCount] = useState(10);
   
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -124,7 +124,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
           setTab('all');
           setDateRangeMode('ALL');
           setExpandedEventId(initialExpandedEventId);
-          // 確保跳到的賽事不會被分頁過濾掉
           setDisplayCount(prev => Math.max(prev, 100));
           
           setTimeout(() => {
@@ -138,7 +137,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       }
   }, [initialExpandedEventId, raceEvents.length]);
 
-  // 🟢 當條件切換時，重置顯示 10 場
+  // 當條件切換時，重置顯示 10 場
   useEffect(() => {
       setDisplayCount(10);
   }, [tab, search, selectedSeries, dateRangeMode, customDateRange]);
@@ -313,31 +312,38 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       setShowJoinModal({ show: true, event, participant });
   };
 
+  // 🟢 核心改動：徹底修復批量打勾選手在過期賽事或新建時，因邏輯分支被丟棄的 Bug
   const handleJoinOrUpdate = async () => {
       if (!showJoinModal.event) return;
-      const eDate = parseISO(showJoinModal.event.date);
-      const isPast = !isAfter(eDate, subDays(new Date(), 1));
       
-      if (canManage) {
-          if (bulkSelectedIds.length === 0 && !joinForm.people_id) {
-              alert("請選擇至少一位選手");
-              return;
+      // 收集真正需要提交的所有選手 IDs
+      let targetPeopleIds: string[] = [];
+      if (canManage && !showJoinModal.participant) {
+          // 如果是管理員點選新增，優先使用多選打勾的名單
+          targetPeopleIds = bulkSelectedIds;
+          if (targetPeopleIds.length === 0 && joinForm.people_id) {
+              targetPeopleIds = [joinForm.people_id];
           }
       } else {
-          if (!joinForm.people_id) {
-              alert("請選擇選手");
-              return;
-          }
+          // 一般選手報名或點擊單個編輯
+          if (joinForm.people_id) targetPeopleIds = [joinForm.people_id];
+      }
+
+      if (targetPeopleIds.length === 0) {
+          alert("請選擇至少一位選手");
+          return;
       }
 
       setSubmitting(true);
       try {
-          if (canManage && !showJoinModal.participant && !isPast) {
-              await Promise.all(bulkSelectedIds.map(pid => 
-                  api.joinOrUpdateRace(showJoinModal.event!.id, pid, '', '', '')
+          // 🟢 統一不論未來或過去，只要是「批量新增模式」，就全部跑 Promise.all 寫入資料庫
+          if (!showJoinModal.participant) {
+              await Promise.all(targetPeopleIds.map(pid => 
+                  api.joinOrUpdateRace(showJoinModal.event!.id, pid, '', joinForm.ranking, joinForm.note)
               ));
           } else {
-              const pid = canManage && !showJoinModal.participant ? bulkSelectedIds[0] : joinForm.people_id;
+              // 單一選手更新
+              const pid = targetPeopleIds[0];
               await api.joinOrUpdateRace(showJoinModal.event!.id, pid, '', joinForm.ranking, joinForm.note);
           }
           await refreshData();
@@ -564,12 +570,18 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       });
   }, [raceEvents, tab, dateRangeMode, search, selectedSeries, user, customDateRange]);
 
-  // 🟢 取得分頁後的 10 場賽事
+  // 取得分頁後的 10 場賽事
   const visibleEvents = useMemo(() => sortedEvents.slice(0, displayCount), [sortedEvents, displayCount]);
 
   const isRiderMode = !canManage;
+  
+  // 可選人員名單過濾邏輯，支援同時擁有多身分選手
   const selectablePeople = useMemo(() => {
-      return people.filter((p: any) => !p.is_hidden && p.role !== 'admin' && (p.roles?.includes(ROLES.RIDER) || p.roles?.includes(ROLES.AIDE))).sort((a:any, b:any) => a.name.localeCompare(b.name));
+      return people.filter((p: any) => {
+          return !p.is_hidden && 
+                 p.role !== 'admin' && 
+                 (hasRole(p, ROLES.RIDER) || hasRole(p, ROLES.RACING) || hasRole(p, ROLES.AIDE));
+      }).sort((a:any, b:any) => a.name.localeCompare(b.name));
   }, [people]);
 
   const isModalEventPast = useMemo(() => {
@@ -742,7 +754,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                </div>
            ) : sortedEvents.length > 0 ? (
                <>
-                   {/* 🟢 這裡替換成 visibleEvents (只渲染 10 場) */}
                    {visibleEvents.map(event => {
                        const eDate = parseISO(event.date);
                        const isPast = !isAfter(eDate, subDays(new Date(), 1));
@@ -914,7 +925,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                        );
                    })}
 
-                   {/* 🟢 載入更多賽事的按鈕 */}
+                   {/* 載入更多賽事的按鈕 */}
                    {sortedEvents.length > displayCount && (
                        <button 
                             onClick={() => setDisplayCount(prev => prev + 10)}
@@ -1069,7 +1080,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                       <h3 className="text-xl font-black text-white italic">{showJoinModal.participant ? '更新成績' : '報名賽事'}</h3>
                   </div>
 
-                  {/* Rider Photo Upload (Only for existing participants) */}
+                  {/* Rider Photo Upload */}
                   {showJoinModal.participant && (
                       <div className="w-full mb-2">
                           <div className="relative w-full aspect-square max-w-[120px] mx-auto rounded-full bg-zinc-900 border-2 border-white/10 overflow-hidden group">
@@ -1086,7 +1097,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                   <div className="space-y-4">
                       <div className="space-y-1">
                           <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">選手</label>
-                          {canManage && !showJoinModal.participant && !isModalEventPast ? (
+                          {canManage && !showJoinModal.participant ? (
                               <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto p-1 bg-zinc-900/50 rounded-xl border border-white/5">
                                   {selectablePeople.map((p: any) => {
                                       const isSelected = bulkSelectedIds.includes(String(p.id));
@@ -1137,7 +1148,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                           {submitting ? <Loader2 size={18} className="animate-spin" /> : (showJoinModal.participant ? '更新資料' : `確認${isModalEventPast ? '補登' : '報名'}`)}
                       </button>
                       
-                      {/* Delete Button inside Join Modal (For self or admin) */}
                       {showJoinModal.participant && (canManage || String(showJoinModal.participant.people_id) === String(user?.id)) && (
                           <button onClick={() => { setShowJoinModal({show: false}); handleExitRace(showJoinModal.event!.id, showJoinModal.participant!.people_id || showJoinModal.participant!.id); }} className="w-full py-3 bg-zinc-900 text-rose-500 font-bold rounded-xl border border-rose-500/20 active:scale-95 transition-all flex items-center justify-center gap-2">
                               <Trash2 size={16}/> 刪除/取消報名
@@ -1182,7 +1192,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                       image={cropImageSrc}
                       crop={crop}
                       zoom={zoom}
-                      aspect={activeUploadEventId ? 4/5 : 16/9} // Portrait for user race photo, Landscape for event cover
+                      aspect={activeUploadEventId ? 4/5 : 16/9} 
                       onCropChange={setCrop}
                       onCropComplete={onCropComplete}
                       onZoomChange={setZoom}
