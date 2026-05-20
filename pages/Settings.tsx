@@ -8,7 +8,6 @@ import { format, differenceInYears, parseISO, addYears, endOfMonth, addMonths, s
 import { SimpleImageCropper } from '../components/SimpleImageCropper';
 import { hasPermission, hasRole, PERMISSIONS, ROLES } from '../utils/auth';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ManualModal } from '../components/ManualModal';
 
 const SimpleAreaChart = ({ data, color = "#39e75f", showTickets = false }: any) => {
     if (!data || data.length === 0) return null;
@@ -51,7 +50,7 @@ const SimpleAreaChart = ({ data, color = "#39e75f", showTickets = false }: any) 
         </div>
     );
 };
-
+import { ManualModal } from '../components/ManualModal';
 
 const FALLBACK_VAPID = "BAcjQfCcruqwU6OicgOJh66UR6125vX_rcsk-G_ddnQYdwI2XJK0jKYNF1IckZdqDfu7DvOOaVUFHd-PigfJ2jw";
 
@@ -604,50 +603,9 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const toggleFixedStudent = (id: number | string) => { setFormData((prev: any) => { const current = prev.default_student_ids || []; if (current.includes(String(id))) { return { ...prev, default_student_ids: current.filter((sid: string) => sid !== String(id)) }; } else { return { ...prev, default_student_ids: [...current, String(id)] }; } }); };
   const handleSaveConfig = async (type: 'training'|'series') => { if(!formData.name) return; setIsSubmitting(true); let res = false; const action = isEditMode ? 'update' : 'create'; const payload = isEditMode ? { id: formData.id, [type === 'training' ? 'type_name' : 'series_name']: formData.name, is_default: formData.is_default } : { [type === 'training' ? 'type_name' : 'series_name']: formData.name, is_default: formData.is_default }; if(type === 'training') res = await api.manageTrainingType(action, payload); if(type === 'series') res = await api.manageRaceSeries(action, payload); if(res) { await refreshData(); setShowModal(false); } setIsSubmitting(false); };
   const handleDeleteConfig = (type: 'training'|'series', id: string|number) => { setConfirmModal({ show: true, title: "確認刪除", message: "確定要刪除此項目嗎？", onConfirm: async () => { let res = false; if(type === 'training') res = await api.manageTrainingType('delete', { id }); if(type === 'series') res = await api.manageRaceSeries('delete', { id }); if(res) { await refreshData(); setShowModal(false); } setConfirmModal(null); } }); };
-  const handleAddPerson = async () => {
-        if(!formData.name) return;
-        setIsSubmitting(true);
-        
-        // 安全防禦：如果操作者是 AIDE 且非高級管理員，強制造型 roles 只能有 RIDER 或 RACING
-        let finalRoles = formData.roles || [ROLES.RIDER];
-        if (!hasRole(user, ROLES.DEV) && !hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) && hasRole(user, ROLES.AIDE)) {
-            finalRoles = finalRoles.filter((r: string) => r === ROLES.RIDER || r === ROLES.RACING);
-            if (finalRoles.length === 0) finalRoles = [ROLES.RIDER]; // 預設防呆
-        }
-
-        const res = await api.createPerson(formData.name, formData.full_name || formData.name, 'parent', formData.birthday, finalRoles);
-        if(res) {
-            await refreshData();
-            setShowModal(false);
-        }
-        setIsSubmitting(false);
-    };
-
-  const handleEditPerson = async () => {
-        if(!formData.id || !formData.name) return;
-        setIsSubmitting(true);
-
-        // 安全防禦：如果操作者是 AIDE 且非高級管理員，強制造型 roles 只能有 RIDER 或 RACING
-        let finalRoles = formData.roles || [];
-        if (!hasRole(user, ROLES.DEV) && !hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) && hasRole(user, ROLES.AIDE)) {
-            finalRoles = finalRoles.filter((r: string) => r === ROLES.RIDER || r === ROLES.RACING);
-            if (finalRoles.length === 0) finalRoles = [ROLES.RIDER]; // 預設防呆
-        }
-
-        const res = await api.manageLookup('people', formData.name, formData.id, false, formData.is_hidden, { birthday: formData.birthday, full_name: formData.full_name, roles: finalRoles });
-        if(res) {
-            if (user && String(formData.id) === String(user.id)) {
-                const newUser = { ...user, name: formData.name, birthday: formData.birthday, full_name: formData.full_name, roles: finalRoles, is_hidden: formData.is_hidden };
-                setUser(newUser);
-                localStorage.setItem('CHIACHIA_USER', JSON.stringify(newUser));
-            }
-            await refreshData();
-            setShowModal(false);
-        }
-        setIsSubmitting(false);
-    }; 
-
-
+  const handleAddPerson = async () => { if(!formData.name) return; setIsSubmitting(true); const res = await api.createPerson(formData.name, formData.full_name || formData.name, 'parent', formData.birthday, formData.roles || [ROLES.RIDER]); if(res) { await refreshData(); setShowModal(false); } setIsSubmitting(false); };
+  const handleEditPerson = async () => { if(!formData.id || !formData.name) return; setIsSubmitting(true); const res = await api.manageLookup('people', formData.name, formData.id, false, formData.is_hidden, { birthday: formData.birthday, full_name: formData.full_name, roles: formData.roles }); if(res) { if (user && String(formData.id) === String(user.id)) { const newUser = { ...user, name: formData.name, birthday: formData.birthday, full_name: formData.full_name, roles: formData.roles, is_hidden: formData.is_hidden }; setUser(newUser); localStorage.setItem('CHIACHIA_USER', JSON.stringify(newUser)); } await refreshData(); setShowModal(false); } setIsSubmitting(false); };
+  
   const handleResetPassword = () => { 
       if(!formData.id || !formData.name) return; 
       setConfirmModal({ 
@@ -1216,7 +1174,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                             <MenuCard title="修改密碼" icon={<LockKeyhole/>} onClick={() => { setFormData({}); setPasswordError(''); setModalType('change_password'); setShowModal(true); }} /> 
                             <MenuCard title="推播通知" icon={<BellRing/>} onClick={() => { setModalType('settings_menu'); setShowModal(true); }} />
                             <MenuCard title="使用說明書" icon={<BookOpen/>} onClick={() => { setModalType('manual'); setShowModal(true); }} />
-                            {(hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) || hasRole(user, ROLES.DEV) || hasRole(user, ROLES.AIDE)) && <MenuCard title="人員管理" icon={<User/>} onClick={() => setAdminView('players')} />}
+                            {(hasPermission(user, PERMISSIONS.PEOPLE_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="人員管理" icon={<User/>} onClick={() => setAdminView('players')} />}
                             {(hasPermission(user, PERMISSIONS.COURSE_EDIT) || hasPermission(user, PERMISSIONS.TICKET_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="課程票務" icon={<LayoutGrid/>} onClick={() => { setAdminView('course_ticket'); setCourseCategory(null); setTicketView('menu'); }} badge={ticketRequests.length} />}
                             {(hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="訓練項目" icon={<Activity/>} onClick={() => setAdminView('training')} />}
                             {(hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV)) && <MenuCard title="賽事系列" icon={<Flag/>} onClick={() => setAdminView('series')} />}
@@ -1342,16 +1300,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                     <div className="space-y-1">
                         <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">角色權限</label>
                         <div className="flex flex-wrap gap-2">
-                            {/* 動態判定可調整的角色：如果是助教(AIDE)且不是主教練/開發者，則強制過濾只能設定 RIDER 與 RACING */}
-                            {[ROLES.RIDER, ROLES.AIDE, ROLES.COACH, ROLES.RACING]
-                            .filter(role => {
-                                if (hasRole(user, ROLES.DEV) || hasPermission(user, PERMISSIONS.PEOPLE_MANAGE)) {
-                                    return true; // 總教練與 DEV 可以看見並調整所有角色
-                                }
-                                // 助教 (AIDE) 只能看到並操作 RIDER 與 RACING
-                                return role === ROLES.RIDER || role === ROLES.RACING;
-                            })
-                            .map(role => (
+                            {[ROLES.RIDER, ROLES.AIDE, ROLES.COACH, ROLES.RACING].map(role => (
                                 <button key={role} onClick={() => handleToggleRole(role)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${formData.roles?.includes(role) ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>
                                     {role}
                                 </button>
