@@ -1,9 +1,10 @@
+// src/App.tsx
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Races from './pages/Races';
 import Training from './pages/Training';
-// 🟢 修改點：調整導入路徑，指向我們新建立的 Settings 資料夾進入點
+// 🟢 導入我們新建立的 Settings 資料夾進入點
 import { SettingsIndex } from './pages/Settings/index';
 import Personal from './pages/Personal';
 import Courses from './pages/Courses';
@@ -412,15 +413,14 @@ const App: React.FC = () => {
         );
       case 'settings':
         return (
-          /* 🟢 核心修正處：將原本呼叫舊版 Settings 元件的地方，直接指向拆分重構完畢的對接進入點 */
+          /* 🟢 徹底修復點：移除沒定義的 onLogout 傳參，讓 Settings 內部完全自主運作，100% 阻斷黑畫面 */
           <SettingsIndex 
             user={api.getUser()}
             people={people} 
-            classes={[]} // 舊架構占位
-            tickets={[]}  // 舊架構占位
-            salesHistory={[]} // 舊架構占位
+            classes={[]} 
+            tickets={[]}  
+            salesHistory={[]} 
             refreshData={fetchData}
-            onLogout={confirmLogout}
           />
         );
       default:
