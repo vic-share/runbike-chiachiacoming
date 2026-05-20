@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { SimpleComposedChart } from '../components/SimpleComposedChart';
 import { UserCircle2, ChevronDown, Plus, X, Trophy, History, Trash2, Edit2, AlertTriangle, Users, UserPlus, Check, Camera, Play, ChevronLeft, CalendarDays, Delete, Save, ChevronUp, ChevronRight, Activity, Zap, Quote, Medal, Flame, Loader2 } from 'lucide-react';
 import { format, differenceInYears, parseISO, subDays, subMonths, isAfter, isValid, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
-// 確保匯入身分檢查工具
+// 確保身分檢查工具完美連動
 import { hasRole, ROLES } from '../utils/auth';
 import { useTrainingSync } from '../hooks/useTrainingSync';
 
@@ -18,6 +18,8 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   });
   const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
 
+  // 🟢 隨機選手狀態 (專屬於剛點進數據分頁的主畫面展示)
+  const [randomRider, setRandomRider] = useState<any>(null);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [participatingRiderIds, setParticipatingRiderIds] = useState<string[]>([]);
   const [currentRiderId, setCurrentRiderId] = useState<string | null>(null);
@@ -40,15 +42,15 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const canRecord = currentUser && (hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.AIDE) || hasRole(currentUser, ROLES.DEV));
   const isAdmin = hasRole(currentUser, ROLES.COACH) || hasRole(currentUser, ROLES.DEV);
 
-  // 🟢 【移至最前方避免 ReferenceError】定義計時錄製中的當前選手 ID
-  const currentTargetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
-  const riderLastValue = currentTargetId ? localLastValues[currentTargetId] : null;
-  const riderCountOffset = currentTargetId ? (localCountOffsets[currentTargetId] || 0) : 0;
-
-  // 🟢 核心過濾名單：必須同時具有開課權限或 RACING 身分的選手，且非 DEV
+  // 🟢 核心過濾名單：全站只撈取有 RACING 身分的競速選手
   const filteredPeople = useMemo(() => {
     return people.filter((p: any) => hasRole(p, ROLES.RACING) && !hasRole(p, ROLES.DEV));
   }, [people]);
+
+  // 定義計時錄製中的當前選手 ID
+  const currentTargetId = currentRiderId || (activePersonId ? String(activePersonId) : null);
+  const riderLastValue = currentTargetId ? localLastValues[currentTargetId] : null;
+  const riderCountOffset = currentTargetId ? (localCountOffsets[currentTargetId] || 0) : 0;
 
   // Deep Link Logic
   useEffect(() => {
@@ -67,27 +69,43 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }
   }, [initialExpandedDate]);
 
+  // 🟢 【需求 1 修正】剛進入數據分頁主頁面時，如果沒有點選任何人，自動隨機抓取一位 Racing 選手展示趨勢
+  useEffect(() => {
+      if (isRecordingMode) return; // 如果已經是計時模式，不觸發隨機跳轉
+      const validPeople = filteredPeople.filter((p: any) => !p.is_hidden);
+      if (validPeople.length === 0) return;
+      
+      // 如果目前沒指定 activePersonId 且還沒產生過隨機選手
+      if (!activePersonId && !randomRider) {
+          const random = validPeople[Math.floor(Math.random() * validPeople.length)];
+          if (random) {
+              setRandomRider(random);
+          }
+      }
+  }, [filteredPeople, activePersonId, isRecordingMode, randomRider]);
+
   useEffect(() => {
       if (trainingTypes.length > 0 && !selectedType) {
           setSelectedType(trainingTypes[0].id);
       }
-      if (activePersonId) {
+      // 只有從外部(如首頁)明確帶選手 ID 進來時，才在初始化時被動寫入 REC 名單
+      if (activePersonId && participatingRiderIds.length === 0) {
           const pid = String(activePersonId);
-          setParticipatingRiderIds(prev => prev.includes(pid) ? prev : [...prev, pid]);
-          setCurrentRiderId(prev => prev ? prev : pid);
+          setParticipatingRiderIds([pid]);
+          setCurrentRiderId(pid);
       }
   }, [trainingTypes, activePersonId]);
 
-  // activeRider 邏輯：預設為空，避免進頁面自動載入隨機資料
+  // 🚀 主頁面展示選手身分源
   const activeRider = useMemo(() => {
       if (!isRecordingMode) {
-          if (!activePersonId) return null;
-          return filteredPeople.find((p: any) => String(p.id) === String(activePersonId)) || null;
+          if (activePersonId) return filteredPeople.find((p: any) => String(p.id) === String(activePersonId)) || null;
+          return randomRider || (filteredPeople.length > 0 ? filteredPeople[0] : null);
       }
-      if (currentRiderId) return filteredPeople.find((p: any) => String(p.id) === String(currentRiderId));
+      if (currentRiderId) return filteredPeople.find((p: any) => String(p.id) === String(currentRiderId)) || null;
       if (activePersonId) return filteredPeople.find((p: any) => String(p.id) === String(activePersonId)) || null;
       return null;
-  }, [filteredPeople, currentRiderId, activePersonId, isRecordingMode]);
+  }, [filteredPeople, currentRiderId, activePersonId, isRecordingMode, randomRider]);
 
   const validRiders = useMemo(() => {
        return participatingRiderIds
@@ -274,7 +292,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
           setLocalCountOffsets(prev => ({ ...prev, [targetId]: (prev[targetId] || 0) + 1 }));
           setInputValue('');
           setFeedbackMsg('SAVED');
-          localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now()));
           refreshData(); 
           setTimeout(() => setFeedbackMsg(null), 1500);
       } catch (e) { alert('紀錄失敗'); } finally { setSubmitting(false); }
@@ -293,7 +310,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                   return next; 
               } 
           });
-      } else { onSelectPerson(id); localStorage.setItem('TRAINING_LAST_RIDER_TIME', String(Date.now())); setShowRiderSelectModal(false); }
+      } else { onSelectPerson(id); setShowRiderSelectModal(false); }
   };
 
   const handleDeleteRecord = async () => {
@@ -320,7 +337,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
     }, 600);
   };
 
-  // 縮放排版按鈕與間距規則
+  // 🟢 縮放排版按鈕與間距規則
   const riderGridStyles = useMemo(() => {
     const count = validRiders.length;
     if (count <= 2) {
@@ -358,18 +375,25 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
     }
   }, [validRiders.length]);
 
+  // 🟢 【需求 2 修正】點選 Start Training 時強制清空預設選手名單
+  const handleStartTrainingClick = () => {
+      setParticipatingRiderIds([]); // 強制清空選手
+      setCurrentRiderId(null);      // 強制不指派當前計時目標
+      setIsRecordingMode(true);     // 啟動錄製模式
+  };
+
   const renderOverview = () => (
       <div className="flex flex-col relative pb-32">
            {canRecord && (
                <div className="px-4 py-6 mt-4 relative z-50">
-                   <button onClick={() => setIsRecordingMode(true)} className="w-full bg-gradient-to-r from-chiachia-green to-emerald-600 text-black h-14 rounded-2xl shadow-[0_0_20px_rgba(57,231,95,0.4)] flex items-center justify-center gap-3 active:scale-[0.98] transition-all group">
+                   {/* 🟢 點擊事件替換為強制清空名單的獨立 Handler */}
+                   <button onClick={handleStartTrainingClick} className="w-full bg-gradient-to-r from-chiachia-green to-emerald-600 text-black h-14 rounded-2xl shadow-[0_0_20px_rgba(57,231,95,0.4)] flex items-center justify-center gap-3 active:scale-[0.98] transition-all group">
                        <Play size={20} fill="black" className="group-hover:scale-110 transition-transform" />
                        <span className="text-xl font-black italic tracking-wider">START TRAINING</span>
                    </button>
                </div>
            )}
 
-           {/* 當還沒有點選或載入任何預設選手時，顯示一個精美的空狀態提示與選人按鈕 */}
            {!activeRider ? (
                <div className="px-4 py-12 flex flex-col items-center justify-center text-center space-y-4 animate-fade-in">
                    <div className="w-24 h-24 rounded-full bg-zinc-900 border border-dashed border-white/10 flex items-center justify-center text-zinc-500 shadow-inner">
@@ -387,7 +411,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                    </button>
                </div>
            ) : (
-               /* 有選手時正常渲染原版面內容 */
                <>
                    <div className="relative w-full h-[55vh] shrink-0 mx-auto px-4 z-0">
                        <div className="w-full h-full rounded-[32px] overflow-hidden relative border border-white/5 bg-zinc-900">
@@ -497,37 +520,63 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
         {renderOverview()}
         {isRecordingMode && createPortal(
           <div className="fixed inset-0 z-[50000] bg-zinc-950 flex flex-col pb-[env(safe-area-inset-bottom)] pt-[calc(env(safe-area-inset-top)+10px)]">
-               <div className="flex items-center justify-between p-4 shrink-0 h-16 bg-gradient-to-b from-black to-zinc-950 relative">
+               {/* 頂部 Header */}
+               <div className="flex items-center justify-between p-4 shrink-0 h-16 bg-gradient-to-b from-black to-zinc-950 relative border-b border-white/5">
                     <button onClick={() => setIsRecordingMode(false)} className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 border border-white/5"> <ChevronLeft size={20} /> </button>
                     <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1.5 rounded-full border border-white/5 absolute left-1/2 -translate-x-1/2"> <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div> <span className="text-white text-xs font-black italic tracking-widest">REC</span> </div>
                     <button onClick={() => setShowHistoryModal({show: true})} className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 border border-white/5"> <History size={18} /> </button>
                </div>
-               <div className="shrink-0 flex flex-col items-center justify-start pb-2 border-b border-white/5 bg-zinc-950 relative z-10">
-                   <div className="relative inline-block z-20 mb-1"> <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="appearance-none bg-zinc-900/50 border border-white/10 text-zinc-400 text-sm font-black uppercase tracking-widest py-1.5 pl-3 pr-6 rounded-full outline-none text-center"> {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} </select> <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" size={14} /> </div>
-                   <div className="flex items-center gap-4 mb-1"> 
+
+               {/* 上方 HUD 計時面板區塊 */}
+               {/* 🟢 【需求 3 修正】優化排版去除溢出背景，絕對不渲染任何遮罩，杜絕黑條阻擋選手點擊 */}
+               <div className="shrink-0 flex flex-col items-center justify-start py-3 bg-zinc-950 relative border-b border-white/5">
+                   <div className="relative inline-block z-20 mb-1.5"> 
+                       <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="appearance-none bg-zinc-900/80 border border-white/10 text-zinc-300 text-sm font-black uppercase tracking-widest py-1.5 pl-4 pr-7 rounded-full outline-none text-center"> 
+                           {trainingTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name || t.type_name}</option>)} 
+                       </select> 
+                       <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" size={14} /> 
+                   </div>
+                   
+                   <div className="flex items-center gap-4 mb-1.5"> 
                        {(riderLastValue || lastRecordValue) && ( 
-                           <div className="text-xs font-black text-zinc-600 font-mono flex items-center gap-1.5 px-2 py-0.5 rounded-lg"> 
+                           <div className="text-[10px] font-black text-zinc-500 font-mono flex items-center gap-1.5 px-2 py-0.5 rounded-lg"> 
                                <span>PREV</span> 
-                               <span className="text-zinc-400">{parseFloat(riderLastValue || lastRecordValue || '0').toFixed(3)}s</span> 
+                               <span className="text-zinc-300">{parseFloat(riderLastValue || lastRecordValue || '0').toFixed(3)}s</span> 
                            </div> 
                        )} 
-                       <div className="text-xs font-black text-zinc-600 font-mono flex items-center gap-1.5 bg-zinc-900/40 px-2 py-0.5 rounded-lg border border-white/5"> 
+                       <div className="text-[10px] font-black text-zinc-500 font-mono flex items-center gap-1.5 bg-zinc-900/60 px-2.5 py-0.5 rounded-lg border border-white/5"> 
                            <span>TODAY</span> 
                            <span className="text-chiachia-green">{todayCount + riderCountOffset}</span> 
                        </div> 
                    </div>
-                   <div className="relative w-full text-center px-4"> <span className={`font-mono font-black tracking-tighter leading-none text-white transition-all ${inputValue.length > 4 ? 'text-6xl' : 'text-7xl'}`}> {inputValue || '0.00'} </span> <span className="text-2xl font-black text-zinc-700 ml-1 italic absolute bottom-4">s</span> </div>
-                   <div className="h-6 flex flex-col items-center justify-center w-full mt-1"> {feedbackMsg && ( <div className="bg-chiachia-green text-black px-4 py-1 rounded-full text-[10px] font-black tracking-widest animate-scale-in"> {feedbackMsg} </div> )} </div>
+                   
+                   <div className="relative w-full text-center px-4"> 
+                       <span className={`font-mono font-black tracking-tighter leading-none text-white transition-all ${inputValue.length > 4 ? 'text-6xl' : 'text-7xl'}`}> 
+                           {inputValue || '0.00'} 
+                       </span> 
+                       <span className="text-2xl font-black text-zinc-700 ml-1 italic absolute bottom-3">s</span> 
+                   </div>
+                   
+                   <div className="h-6 flex flex-col items-center justify-center w-full mt-1"> 
+                       {feedbackMsg && ( <div className="bg-chiachia-green text-black px-4 py-1 rounded-full text-[10px] font-black tracking-widest animate-scale-in"> {feedbackMsg} </div> )} 
+                   </div>
                </div>
                
-               {/* 選手選擇列表區塊 */}
-               <div className="flex-1 min-h-0 bg-black relative w-full overflow-y-auto no-scrollbar flex flex-col">
-                   {/* 滾動視窗限高 */}
-                   <div className="flex-grow w-full flex flex-col p-2 min-h-0 max-h-[170px] sm:max-h-[190px] overflow-y-auto no-scrollbar">
+               {/* 選手選擇列表區塊：限高排版 */}
+               {/* 🟢 【需求 3 修正】去除所有遮罩子層，加強 z-index 控制，確保打勾按鈕點擊完全通暢 */}
+               <div className="flex-1 min-h-0 bg-black relative w-full flex flex-col z-20">
+                   {/* 滾動視窗限高限制，超出 8 人流暢滑動 */}
+                   <div className="flex-grow w-full flex flex-col p-2 min-h-0 max-h-[175px] sm:max-h-[195px] overflow-y-auto no-scrollbar relative z-30">
                        {validRiders.length === 0 ? (
-                           <div className="flex-1 flex items-center justify-center"> <button onClick={() => setShowRiderSelectModal(true)} className="w-32 h-32 rounded-full bg-zinc-900 border border-white/10 flex flex-col items-center justify-center gap-2"> <Users size={32} className="text-zinc-500"/> <span className="text-xs font-black text-zinc-500 uppercase tracking-widest">Select Rider</span> <div className="w-8 h-8 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green mt-1"> <Plus size={20} strokeWidth={3} /> </div> </button> </div>
+                           <div className="flex-1 flex items-center justify-center py-4"> 
+                               <button onClick={() => setShowRiderSelectModal(true)} className="w-28 h-28 rounded-full bg-zinc-900 border border-white/10 flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-all"> 
+                                   <Users size={28} className="text-zinc-500"/> 
+                                   <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Select Rider</span> 
+                                   <div className="w-7 h-7 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green mt-0.5"> <Plus size={16} strokeWidth={3} /> </div> 
+                               </button> 
+                           </div>
                        ) : (
-                           <div className={`grid content-start py-1 ${riderGridStyles.gridClass}`}>
+                           <div className={`grid content-start py-1 relative z-40 ${riderGridStyles.gridClass}`}>
                                {validRiders.map((p: any) => { 
                                     const pid = String(p.id); 
                                     const isActive = currentRiderId === pid; 
@@ -539,8 +588,8 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                                             onClick={() => setCurrentRiderId(pid)} 
                                             className={`relative group flex items-center justify-center rounded-2xl transition-all ${riderGridStyles.buttonClass} ${
                                                 isActive 
-                                                ? 'bg-chiachia-green/10 border-chiachia-green text-white scale-[1.02] z-10 shadow-[0_0_15px_rgba(57,231,95,0.2)]' 
-                                                : 'bg-zinc-900/40 border-white/5 text-zinc-500 opacity-60 scale-95'
+                                                ? 'bg-chiachia-green/10 border-chiachia-green text-white scale-[1.02] z-50 shadow-[0_0_15px_rgba(57,231,95,0.25)]' 
+                                                : 'bg-zinc-900/50 border-white/5 text-zinc-500 opacity-60 scale-95'
                                             }`}
                                          > 
                                              <div className={`rounded-full overflow-hidden shrink-0 relative flex items-center justify-center mr-2.5 border ${
@@ -566,7 +615,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                                 })}
                                 <button 
                                     onClick={() => setShowRiderSelectModal(true)} 
-                                    className={`flex items-center justify-center rounded-2xl border-2 border-dashed border-zinc-700 bg-zinc-900/20 text-zinc-500 hover:text-white transition-colors scale-95 opacity-50 ${riderGridStyles.buttonClass}`}
+                                    className={`flex items-center justify-center rounded-2xl border-2 border-dashed border-zinc-800 bg-zinc-900/20 text-zinc-500 hover:text-white transition-colors scale-95 opacity-50 ${riderGridStyles.buttonClass}`}
                                 > 
                                     <Plus size={20} strokeWidth={3} /> 
                                 </button>
@@ -574,7 +623,9 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                        )}
                    </div>
                </div>
-               <div className="flex-none bg-zinc-950 border-t border-white/10 relative z-30 pb-4 pt-2 shadow-[0_-10px_40px_rgba(0,0,0,1)]">
+               
+               {/* 底部鍵盤區塊 */}
+               <div className="flex-none bg-zinc-950 border-t border-white/10 relative z-50 pb-4 pt-2 shadow-[0_-10px_40px_rgba(0,0,0,1)]">
                    <div className="grid grid-cols-3 gap-1 px-4"> {[1,2,3,4,5,6,7,8,9,'.',0].map(n => ( <button key={n} onClick={() => handleDigitPress(String(n))} className="h-14 bg-zinc-900 rounded-xl text-3xl font-black text-white active:bg-zinc-800 active:scale-95 flex items-center justify-center border border-white/5"> {n} </button> ))} <button onClick={() => setInputValue(prev => prev.slice(0, -1))} className="h-14 bg-zinc-900/50 rounded-xl text-xl font-black text-rose-500 flex items-center justify-center border border-white/5 uppercase"> <Delete size={28} /> </button> </div>
                    <div className="px-4 pt-2"> <button onClick={handleRecordSubmit} disabled={submitting || !inputValue} className="w-full h-14 bg-gradient-to-r from-chiachia-green to-emerald-600 text-black font-black text-2xl italic tracking-widest rounded-xl shadow-[0_0_20px_rgba(57,231,95,0.4)] active:scale-[0.98] transition-all uppercase flex items-center justify-center gap-3 disabled:opacity-30"> {submitting ? <Loader2 className="animate-spin" /> : 'ENTER RECORD'} </button> </div>
                </div>
