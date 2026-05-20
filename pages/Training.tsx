@@ -18,7 +18,6 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   });
   const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
 
-  // 🟢 調整重點：移除頁面初始化時自動抓取隨機選手的 randomRider 邏輯
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [participatingRiderIds, setParticipatingRiderIds] = useState<string[]>([]);
   const [currentRiderId, setCurrentRiderId] = useState<string | null>(null);
@@ -63,14 +62,10 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }
   }, [initialExpandedDate]);
 
-  // 🟢 核心修改 1：徹底移除原本在點選「數據分頁」時會自動 Random 亂塞選手名字的 useEffect
-  // (已將舊有自動隨機分配、記錄上次瀏覽時間的 localStorage 機制移除，確保點進來必定是空的)
-
   useEffect(() => {
       if (trainingTypes.length > 0 && !selectedType) {
           setSelectedType(trainingTypes[0].id);
       }
-      // 只有當外部有明確指定深度連結 activePersonId (例如首頁點某選手跳轉過來) 時，才被動寫入
       if (activePersonId) {
           const pid = String(activePersonId);
           setParticipatingRiderIds(prev => prev.includes(pid) ? prev : [...prev, pid]);
@@ -78,10 +73,9 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       }
   }, [trainingTypes, activePersonId]);
 
-  // 🟢 核心修改 2：activeRider 只在有明確指定 activePersonId 或正在錄製模式選擇時才載入，否則預設為 null
   const activeRider = useMemo(() => {
       if (!isRecordingMode) {
-          if (!activePersonId) return null; // 🟢 沒點選選手時，保持空的
+          if (!activePersonId) return null;
           return filteredPeople.find((p: any) => String(p.id) === String(activePersonId)) || null;
       }
       if (currentRiderId) return filteredPeople.find((p: any) => String(p.id) === String(currentRiderId));
@@ -217,10 +211,11 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
       const targetId = currentTargetId;
       if (!targetId) return [];
       const typeId = getSelectedTypeId();
-      return data.filter((d: any) => 
-          String(d.people_id) === String(targetId) && 
-          String(d.training_type_id) === String(typeId) && d.item === 'training'
-      ).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return data.filter((d: any) => {
+          return String(d.people_id) === String(targetId) && 
+                 String(d.training_type_id) === String(typeId) && 
+                 d.item === 'training';
+      }).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [data, currentRiderId, activePersonId, selectedType]);
 
   const todaySessionRecords = useMemo(() => {
@@ -323,7 +318,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
   const riderLastValue = currentTargetId ? localLastValues[currentTargetId] : null;
   const riderCountOffset = currentTargetId ? (localCountOffsets[currentTargetId] || 0) : 0;
 
-  // 🟢 縮放排版按鈕與間距規則
+  // 縮放排版按鈕與間距規則
   const riderGridStyles = useMemo(() => {
     const count = validRiders.length;
     if (count <= 2) {
@@ -372,7 +367,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                </div>
            )}
 
-           {/* 🟢 核心修改 3：當還沒有點選或載入任何預設選手時，顯示一個精美的空狀態提示與選人按鈕，不再強制報錯或出現空白 */}
+           {/* 當還沒有點選或載入任何預設選手時，顯示一個精美的空狀態提示與選人按鈕 */}
            {!activeRider ? (
                <div className="px-4 py-12 flex flex-col items-center justify-center text-center space-y-4 animate-fade-in">
                    <div className="w-24 h-24 rounded-full bg-zinc-900 border border-dashed border-white/10 flex items-center justify-center text-zinc-500 shadow-inner">
@@ -395,7 +390,10 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                    <div className="relative w-full h-[55vh] shrink-0 mx-auto px-4 z-0">
                        <div className="w-full h-full rounded-[32px] overflow-hidden relative border border-white/5 bg-zinc-900">
                            {activeRider?.b_url ? ( <img src={activeRider.b_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-900 gap-2"> <Camera size={32} /> <span className="text-xs font-black uppercase tracking-widest">No Cover Photo</span> </div> )}
-                           <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black via-black/60 to-transparent"></div>
+                           {/* 🟢 這裡做修正：只有在非 REC 計時錄製模式下，才去加這層大背景陰影。REC 模式時直接不渲染，避免黑條壓到下方的 Grid 按鈕 */}
+                           {!isRecordingMode && (
+                               <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none"></div>
+                           )}
                            <button onClick={() => setShowRiderSelectModal(true)} className="absolute bottom-6 right-5 w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white z-50 border border-white/20 active:scale-95 shadow-lg"> <Users size={20} /> </button>
                            <div className="absolute bottom-6 left-5 right-16 flex items-end gap-4 z-20">
                                <div className="w-20 h-20 rounded-full border-2 border-white bg-zinc-950 shadow-2xl overflow-hidden flex items-center justify-center"> {activeRider?.s_url ? ( <img src={activeRider.s_url.split('#')[0]} className="w-full h-full object-cover" /> ) : ( <span className="font-black text-4xl text-white"> {activeRider?.name?.[0] || '?'} </span> )} </div>
@@ -521,9 +519,9 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                    <div className="h-6 flex flex-col items-center justify-center w-full mt-1"> {feedbackMsg && ( <div className="bg-chiachia-green text-black px-4 py-1 rounded-full text-[10px] font-black tracking-widest animate-scale-in"> {feedbackMsg} </div> )} </div>
                </div>
                
-               {/* 選手選擇列表區塊：限高排版 */}
+               {/* 選手選擇列表區塊 */}
                <div className="flex-1 min-h-0 bg-black relative w-full overflow-y-auto no-scrollbar flex flex-col">
-                   {/* 滾動視窗限高 */}
+                   {/* 🟢 這裡移除了原本會強制擋住最下面按鈕點擊、黑黑的一圈不透明遮罩圖層，並優化 max-h 限高 */}
                    <div className="flex-grow w-full flex flex-col p-2 min-h-0 max-h-[170px] sm:max-h-[190px] overflow-y-auto no-scrollbar">
                        {validRiders.length === 0 ? (
                            <div className="flex-1 flex items-center justify-center"> <button onClick={() => setShowRiderSelectModal(true)} className="w-32 h-32 rounded-full bg-zinc-900 border border-white/10 flex flex-col items-center justify-center gap-2"> <Users size={32} className="text-zinc-500"/> <span className="text-xs font-black text-zinc-500 uppercase tracking-widest">Select Rider</span> <div className="w-8 h-8 rounded-full bg-chiachia-green flex items-center justify-center text-black shadow-glow-green mt-1"> <Plus size={20} strokeWidth={3} /> </div> </button> </div>
@@ -567,7 +565,7 @@ const Training: React.FC<any> = ({ trainingTypes, defaultType, refreshData, data
                                 })}
                                 <button 
                                     onClick={() => setShowRiderSelectModal(true)} 
-                                    className={`flex items-center justify-center rounded-2xl border-2 border-dashed border-zinc-800 bg-zinc-900/20 text-zinc-500 hover:text-white transition-colors scale-95 opacity-50 ${riderGridStyles.buttonClass}`}
+                                    className={`flex items-center justify-center rounded-2xl border-2 border-dashed border-zinc-700 bg-zinc-900/20 text-zinc-500 hover:text-white transition-colors scale-95 opacity-50 ${riderGridStyles.buttonClass}`}
                                 > 
                                     <Plus size={20} strokeWidth={3} /> 
                                 </button>
