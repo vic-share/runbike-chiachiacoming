@@ -3,10 +3,9 @@ import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../services/api';
 import { LookupItem } from '../../types';
-import { ArrowLeft, Plus, X, RotateCcw, CheckCircle2, Loader2, UserCircle2 } from 'lucide-react';
+import { ArrowLeft, Plus, X, Loader2, UserCircle2 } from 'lucide-react';
 import { hasPermission, hasRole, PERMISSIONS, ROLES } from '../../utils/auth';
 
-// 🟢 專屬顏色識別：管理層維持原色，RACING組亮綠色光圈
 const getRoleStyle = (person: any) => {
     const roles = person.roles || [];
     if (roles.includes(ROLES.DEV)) return { border: 'border-blue-500', shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.5)]', iconColor: 'text-blue-500' };
@@ -41,7 +40,6 @@ export const PlayerManager: React.FC<PlayerManagerProps> = ({ people, user, refr
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [resetStatus, setResetStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
-    // 判斷當前使用者是不是高階管理 (DEV / COACH)
     const canManageDeep = hasPermission(user, PERMISSIONS.CONFIG_MANAGE) || hasRole(user, ROLES.DEV);
 
     const handleToggleRole = (role: string) => {
@@ -84,7 +82,6 @@ export const PlayerManager: React.FC<PlayerManagerProps> = ({ people, user, refr
     };
 
     const sortedPeople = useMemo(() => {
-        // 🟢 列表過濾：讓 AIDE 與 COACH 點進來都可以正常看見所有人
         return people.filter((p: any) => !p.is_hidden).sort(sortPeopleByRole);
     }, [people]);
 
@@ -100,11 +97,7 @@ export const PlayerManager: React.FC<PlayerManagerProps> = ({ people, user, refr
 
             <div className="grid grid-cols-3 gap-3 mt-6">
                 {sortedPeople.map((p: any) => {
-                    const roles = p.roles || [];
-                    const isSelfRacer = roles.includes(ROLES.RACING) && !roles.includes(ROLES.COACH) && !roles.includes(ROLES.AIDE);
-                    // 🟢 套用全新的動態頭像框樣式
                     const borderStyle = getRoleStyle(p);
-
                     return (
                         <button key={p.id} onClick={() => { setFormData({ ...p, is_hidden: !!p.is_hidden }); setIsEditMode(true); setShowModal(true); }} className={`glass-card p-3 rounded-2xl flex flex-col items-center gap-2 relative active:scale-95 transition-all ${p.is_hidden ? 'opacity-40 grayscale' : ''}`}>
                             <div className={`w-16 h-16 rounded-full bg-zinc-800 border-2 ${borderStyle.border} ${borderStyle.shadow} overflow-hidden flex items-center justify-center shrink-0`}>
@@ -142,11 +135,9 @@ export const PlayerManager: React.FC<PlayerManagerProps> = ({ people, user, refr
                             <div className="space-y-1">
                                 <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">角色權限</label>
                                 <div className="flex flex-wrap gap-2">
-                                    {/* 🟢 基礎權限開關：AIDE 與 COACH 均可以自由幫選手指派 RIDER 或 RACING 身分 */}
                                     {[ROLES.RIDER, ROLES.RACING].map(role => (
                                         <button type="button" key={role} onClick={() => handleToggleRole(role)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${formData.roles?.includes(role) ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>{role}</button>
                                     ))}
-                                    {/* 🟢 權限越級攔截：只有高階權限 (canManageDeep) 才能修改教練或助教本身 */}
                                     {canManageDeep && [ROLES.AIDE, ROLES.COACH].map(role => (
                                         <button type="button" key={role} onClick={() => handleToggleRole(role)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${formData.roles?.includes(role) ? 'bg-rose-500 border-rose-500 text-white' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>{role}</button>
                                     ))}
