@@ -8,6 +8,7 @@ import { format, differenceInYears, parseISO, addYears, endOfMonth, addMonths, s
 import { SimpleImageCropper } from '../components/SimpleImageCropper';
 import { hasPermission, hasRole, PERMISSIONS, ROLES } from '../utils/auth';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ManualModal } from '../components/ManualModal';
 
 const SimpleAreaChart = ({ data, color = "#39e75f", showTickets = false }: any) => {
     if (!data || data.length === 0) return null;
@@ -50,7 +51,7 @@ const SimpleAreaChart = ({ data, color = "#39e75f", showTickets = false }: any) 
         </div>
     );
 };
-import { ManualModal } from '../components/ManualModal';
+
 
 const FALLBACK_VAPID = "BAcjQfCcruqwU6OicgOJh66UR6125vX_rcsk-G_ddnQYdwI2XJK0jKYNF1IckZdqDfu7DvOOaVUFHd-PigfJ2jw";
 
