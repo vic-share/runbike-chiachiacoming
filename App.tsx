@@ -1,18 +1,16 @@
-// src/App.tsx
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Races from './pages/Races';
 import Training from './pages/Training';
-// 🟢 導入我們新建立的 Settings 資料夾進入點
-import { SettingsIndex } from './pages/Settings/index';
+import Settings from './pages/Settings';
 import Personal from './pages/Personal';
 import Courses from './pages/Courses';
 import { InstallPwaModal } from './components/InstallPwaModal';
 import { api } from './services/api';
 import { DataRecord, LookupItem, TeamInfo, RaceEvent, LegendRecord } from './types';
 import { LockKeyhole, Loader2 } from 'lucide-react';
-// 匯入權限判定清單與工具
+// 🟢 匯入權限判定清單與工具
 import { hasPermission, PERMISSIONS } from './utils/auth';
 
 const DEFAULT_NAME = '睿睿';
@@ -82,7 +80,7 @@ const App: React.FC = () => {
       };
   }, []);
 
-  // Silent Push Sync on App Load
+  // 1. Silent Push Sync on App Load
   useEffect(() => {
       const syncPush = async () => {
           if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
@@ -227,6 +225,7 @@ const App: React.FC = () => {
   const handleDeepLinkToTraining = (riderId: string | number, date?: string) => {
       if (riderId) handleUpdateActivePerson(riderId);
       if (date) setJumpDate(date);
+      // 🟢 進入前再次檢查：如果點選深度連結但使用者無權限看數據，攔截防禦
       const user = api.getUser();
       if (!hasPermission(user, PERMISSIONS.RACING_DATA_VIEW)) {
           setCurrentPage('dashboard');
@@ -278,6 +277,8 @@ const App: React.FC = () => {
         setJumpDate(targetId);
     }
 
+    // 🟢 核心攔截防禦：如果使用者嘗試點進去「訓練數據 (training)」分頁，但沒有 RACING_DATA_VIEW 權限
+    // 直接強制轉回「總覽 (dashboard)」，達到雙重安全防護
     if (targetPage === 'training') {
         const user = api.getUser();
         if (!hasPermission(user, PERMISSIONS.RACING_DATA_VIEW)) {
@@ -286,6 +287,7 @@ const App: React.FC = () => {
         }
     }
 
+    // Require Login for Races AND Courses
     if (targetPage === 'races' || targetPage === 'courses') {
         const user = api.getUser();
         if (!user || !user.id) {
@@ -302,14 +304,14 @@ const App: React.FC = () => {
     if (targetPage === 'personal') {
       let foundAuthId: string | null = null;
       for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('louie_p_auth_')) {
-            const expiry = Number(localStorage.getItem(key));
-            if (Date.now() < expiry) {
-                foundAuthId = key.replace('louie_p_auth_', '');
-                break; 
-            }
-        }
+          const key = localStorage.key(i);
+          if (key && key.startsWith('louie_p_auth_')) {
+              const expiry = Number(localStorage.getItem(key));
+              if (Date.now() < expiry) {
+                  foundAuthId = key.replace('louie_p_auth_', '');
+                  break; 
+              }
+          }
       }
 
       if (foundAuthId) {
@@ -354,6 +356,7 @@ const App: React.FC = () => {
       case 'dashboard':
         return (
           <Dashboard 
+            // 🟢 核心修正：將目前的登入 user 傳遞進去，這樣 Dashboard 的訓練趨勢分析才能做權限控制
             user={api.getUser()}
             data={activeData} 
             trainingTypes={trainingTypes}
@@ -413,14 +416,21 @@ const App: React.FC = () => {
         );
       case 'settings':
         return (
-          /* 🟢 徹底修復點：移除沒定義的 onLogout 傳參，讓 Settings 內部完全自主運作，100% 阻斷黑畫面 */
-          <SettingsIndex 
-            user={api.getUser()}
+          <Settings 
+            data={data}
+            trainingTypes={trainingTypes} 
+            raceGroups={raceGroups}
+            defaultType={defaultTrainingType}
+            personName={activePersonName}
             people={people} 
-            classes={[]} 
-            tickets={[]}  
-            salesHistory={[]} 
             refreshData={fetchData}
+            onUpdateDefault={(val: string) => {
+              setDefaultTrainingType(val);
+              localStorage.setItem('louie_default_type', val);
+            }}
+            onLoginSuccess={handleLoginSuccess}
+            onUpdateName={() => {}} 
+            initialView={settingsTarget} 
           />
         );
       default:
