@@ -1,10 +1,9 @@
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import { uploadImage } from '../services/supabase';
+import { RaceEvent, RaceParticipant, LookupItem } from '../types';
 import { User, Lock, KeyRound, LogIn, ShieldCheck, Wallet, LayoutGrid, Flag, Activity, X, LogOut, ArrowLeft, Plus, Check, Trash2, Camera, UserCircle2, Edit2, Users, MapPin, DollarSign, AlertTriangle, RotateCcw, CheckCircle2, MessageCircle, Calendar, Loader2, LockKeyhole, RefreshCw, Move, ZoomIn, Bell, BellRing, Radio, Send, Megaphone, Trophy, CalendarCheck, CalendarX, FileText, ToggleLeft, ToggleRight, Clock, ChevronRight, ChevronLeft, Settings as SettingsIcon, HelpCircle, TestTube2, Flame, Layers, Star, Zap, Repeat, Ticket, Play, BellOff, CalendarDays, Ban, CreditCard, ChevronDown, ChevronUp, Banknote, FileBarChart, History, Image as ImageIcon, ScrollText, Layers as InventoryIcon, Tag, BookOpen, Power, Filter, XCircle, Share2, PenTool, TrendingUp, TrendingDown } from 'lucide-react';
-import { LookupItem, TicketWallet, CourseTemplate, PushTemplates, ClassSession, TicketPricing, PricingTier, FinancialRecord, FinancialReport } from '../types';
 import { format, differenceInYears, parseISO, addYears, endOfMonth, addMonths, startOfMonth, isSameMonth, subDays, addDays, subMonths, isWithinInterval, startOfDay, endOfDay, isValid } from 'date-fns';
 import { SimpleImageCropper } from '../components/SimpleImageCropper';
 import { hasPermission, hasRole, PERMISSIONS, ROLES } from '../utils/auth';
@@ -14,7 +13,7 @@ const SimpleAreaChart = ({ data, color = "#39e75f", showTickets = false }: any) 
     if (!data || data.length === 0) return null;
     
     const dataKey = showTickets ? 'tickets' : 'amount';
-    const chartColor = showTickets ? '#60a5fa' : color; // Blue for tickets, Green for amount
+    const chartColor = showTickets ? '#60a5fa' : color;
 
     return (
         <div className="w-full h-full">
@@ -71,7 +70,6 @@ const urlBase64ToUint8Array = (base64String: string) => {
   }
 };
 
-// ... (Canvas Crop Utility & Helper functions remain same) ...
 async function getCroppedImg(imageSrc: string, pixelCrop: any): Promise<Blob> {
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
@@ -91,11 +89,18 @@ async function getCroppedImg(imageSrc: string, pixelCrop: any): Promise<Blob> {
   });
 }
 
+// 🟢 核心修改點：依據新規則調整頭像框識別邏輯，DEV/COACH/AIDE優先原色，普通選手若有RACING則強制亮起專屬綠
 const getRoleStyle = (person: any) => {
     const roles = person.roles || [];
+    // 1. 優先判斷管理權限身分，維持其原本設計的高階色彩不變
     if (roles.includes(ROLES.DEV)) return { tier: 4, border: 'border-blue-500', shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.5)]', iconColor: 'text-blue-500' };
     if (roles.includes(ROLES.COACH)) return { tier: 3, border: 'border-rose-500', shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.5)]', iconColor: 'text-rose-500' };
     if (roles.includes(ROLES.AIDE)) return { tier: 2, border: 'border-amber-500', shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.5)]', iconColor: 'text-amber-500' };
+    
+    // 2. 如果不是教練層主管，但是「RACING」競速組人員，亮起 App 專屬綠色光圈與發光
+    if (roles.includes(ROLES.RACING)) return { tier: 1.5, border: 'border-chiachia-green', shadow: 'shadow-[0_0_15px_rgba(57,231,95,0.4)]', iconColor: 'text-chiachia-green' };
+    
+    // 3. 一般普通學員的預設顏色
     return { tier: 1, border: 'border-white/10', shadow: 'shadow-2xl', iconColor: 'text-zinc-500' };
 };
 
@@ -110,7 +115,7 @@ const sortRiders = (a: any, b: any) => {
 const sortPeopleByRole = (a: any, b: any) => {
     const tierA = getRoleStyle(a).tier;
     const tierB = getRoleStyle(b).tier;
-    if (tierA !== tierB) return tierA - tierB;
+    if (tierA !== tierB) return tierB - tierA; // 由權限高排到低
     return a.name.localeCompare(b.name);
 };
 
@@ -227,7 +232,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const [customDateStart, setCustomDateStart] = useState(format(subMonths(new Date(), 1), 'yyyy-MM-dd'));
   const [customDateEnd, setCustomDateEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
   
-  // ... (State definitions remain same) ...
   const [adminView, setAdminView] = useState<'menu' | 'players' | 'tickets' | 'courses' | 'training' | 'series' | 'push_system' | 'course_ticket'>('menu');
   const [ticketView, setTicketView] = useState<'menu' | 'inventory' | 'pricing' | 'history' | 'report'>('menu');
   const [pushView, setPushView] = useState<'menu' | 'announcement' | 'race_automation' | 'data_automation' | 'course_automation' | 'share_config'>('menu');
@@ -296,7 +300,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const [paymentMethod, setPaymentMethod] = useState<'TRANSFER' | 'LINEPAY'>('TRANSFER');
   const [bankAccount, setBankAccount] = useState({ bank_code: '', account_number: '' });
   
-  // Update History Filter State for Range Support
   const [historyFilter, setHistoryFilter] = useState<{type: string, period: string}>({ type: 'ALL', period: '1M' });
   const [historyDateRange, setHistoryDateRange] = useState<'1W' | '1M' | '3M' | 'ALL' | 'PICK'>('1M');
   const [historyCustomRange, setHistoryCustomRange] = useState<{start: string, end: string}>({
@@ -305,7 +308,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   });
   const [isHistoryDateMenuOpen, setIsHistoryDateMenuOpen] = useState(false);
   
-  // New States for Reject Logic
   const [rejectModal, setRejectModal] = useState<{show: boolean, req?: any}>({ show: false });
   const [rejectReason, setRejectReason] = useState('');
 
@@ -317,12 +319,9 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
               setTicketView('inventory');
           } else if (initialView === 'rider_history') {
               if (hasPermission(user, PERMISSIONS.TICKET_MANAGE)) {
-                  // If coach clicks rider history link, maybe go to inventory too? Or nothing.
-                  // Default to inventory for coach
                   setAdminView('tickets');
                   setTicketView('inventory');
               } else {
-                  // Rider: Show history modal
                   setSelectedHistoryPerson(user);
                   loadFinancialHistory(user.id);
                   setModalType('history');
@@ -352,7 +351,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const loadTicketRequests = async () => setTicketRequests(await api.fetchTicketRequests());
   const loadTemplates = async () => setTemplates(await api.fetchCourseTemplates());
   const loadSessions = async () => {
-      // Fetch a wider range for management view (e.g., 3 months back to 6 months forward)
       const start = format(subMonths(new Date(), 3), 'yyyy-MM-dd');
       const end = format(addMonths(new Date(), 6), 'yyyy-MM-dd');
       setSessions(await api.fetchWeeklyCourses(start, end));
@@ -386,7 +384,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
               isInPeriod = isWithinInterval(recordDate, { start, end });
             }
         }
-                if (period === 'ALL') {
+        if (period === 'ALL') {
             isInPeriod = true;
         }
 
@@ -407,9 +405,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   
   useEffect(() => {
       if (adminView === 'tickets' && ticketView === 'report') {
-          // If it's not custom, or if it IS custom but we want to ensure it loads on view enter
-          // Actually, if it's CUSTOM, we usually wait for the user to click "Check"
-          // but if they just switched TO a preset, we should load it.
           if (reportDateRange !== 'CUSTOM') {
               loadFinancialReport(reportDateRange, reportYear);
           }
@@ -476,7 +471,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
 
           const registration = await navigator.serviceWorker.ready;
           
-          // Get Key
           const w = window as any;
           const meta = import.meta as any;
           const keyStr = w.ENV?.VAPID_PUBLIC_KEY || meta.env?.VITE_VAPID_PUBLIC_KEY || FALLBACK_VAPID;
@@ -484,7 +478,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
           
           if (!convertedKey) throw new Error("VAPID Key Invalid");
 
-          // Force refresh subscription
           const oldSub = await registration.pushManager.getSubscription();
           if (oldSub) await oldSub.unsubscribe();
 
@@ -555,9 +548,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
       let finalTitle = `[測試] ${titleTemplate}`; 
       let finalBody = bodyTemplate; 
       Object.entries(dummyData).forEach(([key, val]) => { finalTitle = finalTitle.split(key).join(val); finalBody = finalBody.split(key).join(val); }); 
-      // @ts-ignore
       const meta = import.meta as any; 
-      // @ts-ignore
       const WORKER_URL = 'https://runbike-chiachiacoming.sky070680.workers.dev/api'; 
       try { 
           await fetch(`${WORKER_URL}/admin/push`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('CHIACHIA_TOKEN')}` }, body: JSON.stringify({ title: finalTitle, body: finalBody, url: '/races', target_role: 'COACH' }) }); 
@@ -580,12 +571,9 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
           const res = await api.login(String(selectedPerson.id), loginPass.trim()); 
           if (res.success) { 
               setUser(res.user); 
-              
-              // Check for notifications permission
               if ('Notification' in window && Notification.permission !== 'granted') {
                   setModalType('settings_menu');
                   setShowModal(true);
-                  // Don't call onLoginSuccess yet, user sees modal first
               } else {
                   if (onLoginSuccess) onLoginSuccess(); 
               }
@@ -618,7 +606,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   const handleAddPerson = async () => { if(!formData.name) return; setIsSubmitting(true); const res = await api.createPerson(formData.name, formData.full_name || formData.name, 'parent', formData.birthday, formData.roles || [ROLES.RIDER]); if(res) { await refreshData(); setShowModal(false); } setIsSubmitting(false); };
   const handleEditPerson = async () => { if(!formData.id || !formData.name) return; setIsSubmitting(true); const res = await api.manageLookup('people', formData.name, formData.id, false, formData.is_hidden, { birthday: formData.birthday, full_name: formData.full_name, roles: formData.roles }); if(res) { if (user && String(formData.id) === String(user.id)) { const newUser = { ...user, name: formData.name, birthday: formData.birthday, full_name: formData.full_name, roles: formData.roles, is_hidden: formData.is_hidden }; setUser(newUser); localStorage.setItem('CHIACHIA_USER', JSON.stringify(newUser)); } await refreshData(); setShowModal(false); } setIsSubmitting(false); };
   
-  // Updated: Changed default reset password to 123456
   const handleResetPassword = () => { 
       if(!formData.id || !formData.name) return; 
       setConfirmModal({ 
@@ -731,25 +718,15 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
   };
   const handleToggleRole = (role: string) => { setFormData((prev: any) => { const currentRoles = prev.roles || []; if (currentRoles.includes(role)) { return { ...prev, roles: currentRoles.filter((r: string) => r !== role) }; } else { return { ...prev, roles: [...currentRoles, role] }; } }); };
 
-
-
-  // ... (Keep existing admin sub-views) ...
-  // ... (When adminView is 'menu', render cards) ...
-
-  // ... (Keep existing user profile render logic) ...
   if (user) {
-      const myWallet = wallets.find(w => String(w.people_id) === String(user.id));
+    const myWallet = wallets.find(w => String(w.people_id) === String(user.id));
     const renderContent = () => {
         const days = ['週日','週一','週二','週三','週四','週五','週六'];
         if (adminView !== 'menu') {
-          // ... (Existing admin views) ...
           if(adminView === 'push_system') {
-              // ... (Push system implementation) ...
               if (pushView === 'menu') { return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="推播系統" onBack={() => setAdminView('menu')} /> </div> <div className="px-4 py-4 pb-28"> <div className="grid grid-cols-2 gap-3"> <MenuCard title="教練公告" icon={<Megaphone/>} onClick={() => setPushView('announcement')} /> <MenuCard title="課程公告" icon={<CalendarDays/>} onClick={() => setPushView('course_automation')} /> <MenuCard title="賽事公告" icon={<Trophy/>} onClick={() => setPushView('race_automation')} /> <MenuCard title="數據公告" icon={<Activity/>} onClick={() => setPushView('data_automation')} /> <MenuCard title="分享設定" icon={<Share2/>} onClick={() => setPushView('share_config')} description="設定分享結尾文字" /> </div> </div> </> ); }
-              // ... (Other push views omitted for brevity, but exist in original code) ...
-              // [Rest of Push System Code...]
               if (pushView === 'announcement') { return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="教練公告" onBack={() => setPushView('menu')} /> </div> <div className="px-4 py-4 pb-28 space-y-6"> <div className="glass-card p-6 rounded-3xl space-y-4"> <div className="flex items-center gap-3 mb-2"> <div className="w-10 h-10 rounded-full bg-chiachia-green/10 flex items-center justify-center text-chiachia-green"> <Megaphone size={20} /> </div> <div> <h3 className="text-lg font-black text-white italic">即時推播</h3> <p className="text-[10px] text-zinc-500 font-bold">發送給所有訂閱者</p> </div> </div> <div className="space-y-3"> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">標題 (留空則隱藏)</label> <input type="text" value={pushMessage.title} onChange={e => setPushMessage({...pushMessage, title: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-base" placeholder="標題"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">內容</label> <textarea rows={5} value={pushMessage.body} onChange={e => setPushMessage({...pushMessage, body: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-base" placeholder="輸入公告內容..."/> </div> <button onClick={handleSendBroadcast} disabled={isSubmitting || !pushMessage.body} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2"> {isSubmitting ? <Loader2 size={18} className="animate-spin"/> : <Send size={18} />} {isSubmitting ? '發送中...' : '發送推播'} </button> </div> </div> </div> </> ); }
-              if (pushView === 'course_automation') { return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="課程公告設定" onBack={() => setPushView('menu')} /> </div> <div className="px-4 py-4 pb-28 space-y-6"> <div className="glass-card p-6 rounded-3xl space-y-6 border border-chiachia-green/20 bg-chiachia-green/5"> <div className="flex items-center justify-between mb-2"> <div className="flex items-center gap-3"> <div className="w-10 h-10 rounded-full bg-chiachia-green/10 flex items-center justify-center text-chiachia-green"><CalendarDays size={20} /></div> <div> <h3 className="text-lg font-black text-white italic">課程自動通知</h3> <p className="text-[10px] text-zinc-500 font-bold">開課、停課與提醒</p> </div> </div> <button onClick={() => setPushTemplates(p => ({ ...p, is_enabled: !p.is_enabled }))} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${pushTemplates.is_enabled ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`} > {pushTemplates.is_enabled ? <ToggleRight size={24}/> : <ToggleLeft size={24}/>} <span className="text-[10px] font-black uppercase">{pushTemplates.is_enabled ? 'ON' : 'OFF'}</span> </button> </div> <div className={`space-y-8 transition-opacity ${pushTemplates.is_enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}> <div className="space-y-4"> <TemplateEditor title="確認開課通知" icon={<CheckCircle2 size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="course_open" timingNote="教練按確認時發送" onTest={handleTestBroadcast} variableType="course" /> <TemplateEditor title="停課通知" icon={<Ban size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="course_cancelled" timingNote="教練按取消時發送" onTest={handleTestBroadcast} variableType="course" /> <TemplateEditor title="教練確認提醒" icon={<Bell size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="course_confirm_needed" timingNote="發送給教練 (17:00)" onTest={handleTestBroadcast} variableType="course" /> </div> <div className="pt-4 sticky bottom-0 bg-gradient-to-t from-zinc-950 to-transparent pb-2"> <button onClick={handleSavePushTemplates} disabled={isSavingTemplates} className="w-full py-4 bg-chiachia-green text-black font-black rounded-2xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 text-sm"> {isSavingTemplates ? <Loader2 size={18} className="animate-spin"/> : <Check size={18} />} {isSavingTemplates ? '儲存中...' : '確認儲存設定'} </button> </div> </div> </div> </div> </> ); }
+              if (pushView === 'course_automation') { return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="課程公告設定" onBack={() => setPushView('menu')} /> </div> <div className="px-4 py-4 pb-28 space-y-6"> <div className="glass-card p-6 rounded-3xl space-y-6 border border-chiachia-green/20 bg-chiachia-green/5"> <div className="flex items-center justify-between mb-2"> <div className="flex items-center gap-3"> <div className="w-10 h-10 rounded-full bg-chiachia-green/10 flex items-center justify-center text-chiachia-green"><CalendarDays size={20} /></div> <div> <h3 className="text-lg font-black text-white italic">課程自動通知</h3> <p className="text-[10px] text-zinc-500 font-bold">開課、停課與提醒</p> </div> </div> <button onClick={() => setPushTemplates(p => ({ ...p, is_enabled: !p.is_enabled }))} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${pushTemplates.is_enabled ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`} > {pushTemplates.is_enabled ? <ToggleRight size={24}/> : <ToggleLeft size={24}/>} <span className="text-[10px] font-black uppercase">{pushTemplates.is_enabled ? 'ON' : 'OFF'}</span> </button> </div> <div className={`space-y-8 transition-opacity ${pushTemplates.is_enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}> <div className="space-y-4"> <TemplateEditor title="確認開課通知" icon={<CheckCircle2 size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="course_open" timingNote="教練按確認時發送" onTest={handleTestBroadcast} variableType="course" /> <TemplateEditor title="停課通知" icon={<Ban size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="course_cancelled" timingNote="教練按取消時發送" onTest={handleTestBroadcast} variableType="course" /> <TemplateEditor title="教練確認提醒" icon={<Bell size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="course_confirm_needed" timingNote="發送給教練 (17:00)" onTest={handleTestBroadcast} variableType="course" /> </div> <div className="pt-4 sticky bottom-0 bg-gradient-to-t from-zinc-950 to-transparent pb-2"> <button onClick={handlePushSubscribe} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-2xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 text-sm"> {isSavingTemplates ? <Loader2 size={18} className="animate-spin"/> : <Check size={18} />} {isSavingTemplates ? '儲存中...' : '確認儲存設定'} </button> </div> </div> </div> </div> </> ); }
               if (pushView === 'race_automation') { return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="賽事公告設定" onBack={() => setPushView('menu')} /> </div> <div className="px-4 py-4 pb-28 space-y-6"> <div className="glass-card p-6 rounded-3xl space-y-6 border border-chiachia-green/20 bg-chiachia-green/5"> <div className="flex items-center justify-between mb-2"> <div className="flex items-center gap-3"> <div className="w-10 h-10 rounded-full bg-chiachia-green/10 flex items-center justify-center text-chiachia-green"><Clock size={20} /></div> <div> <h3 className="text-lg font-black text-white italic">賽事自動通知</h3> <p className="text-[10px] text-zinc-500 font-bold">自動觸發的推播內容</p> </div> </div> <button onClick={() => setPushTemplates(p => ({ ...p, is_enabled: !p.is_enabled }))} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${pushTemplates.is_enabled ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`} > {pushTemplates.is_enabled ? <ToggleRight size={24}/> : <ToggleLeft size={24}/>} <span className="text-[10px] font-black uppercase">{pushTemplates.is_enabled ? 'ON' : 'OFF'}</span> </button> </div> <div className={`space-y-8 transition-opacity ${pushTemplates.is_enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}> <div className="space-y-4"> <TemplateEditor title="新增賽事通知" icon={<Plus size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="new_race" timingNote="即時發送" onTest={handleTestBroadcast} variableType="race" /> <TemplateEditor title="賽前提醒 (前一晚)" icon={<CalendarCheck size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="reminder_day_before" timingNote="發送時間: 23:00" onTest={handleTestBroadcast} variableType="race" /> <TemplateEditor title="比賽日 (當天開始)" icon={<Flag size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="reminder_day_start" timingNote="發送時間: 08:00" onTest={handleTestBroadcast} variableType="race" /> <TemplateEditor title="賽事結束 (當天結束)" icon={<CheckCircle2 size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="reminder_day_end" timingNote="發送時間: 23:00" onTest={handleTestBroadcast} variableType="race" /> </div> <div className="pt-4 sticky bottom-0 bg-gradient-to-t from-zinc-950 to-transparent pb-2"> <button onClick={handleSavePushTemplates} disabled={isSavingTemplates} className="w-full py-4 bg-chiachia-green text-black font-black rounded-2xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 text-sm"> {isSavingTemplates ? <Loader2 size={18} className="animate-spin"/> : <Check size={18} />} {isSavingTemplates ? '儲存中...' : '確認儲存設定'} </button> </div> </div> </div> </div> </> ); }
               if (pushView === 'data_automation') { return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="數據公告設定" onBack={() => setPushView('menu')} /> </div> <div className="px-4 py-4 pb-28 space-y-6"> <div className="glass-card p-6 rounded-3xl space-y-6 border border-chiachia-green/20 bg-chiachia-green/5"> <div className="flex items-center justify-between mb-2"> <div className="flex items-center gap-3"> <div className="w-10 h-10 rounded-full bg-chiachia-green/10 flex items-center justify-center text-chiachia-green"><Activity size={20} /></div> <div> <h3 className="text-lg font-black text-white italic">數據自動通知</h3> <p className="text-[10px] text-zinc-500 font-bold">自動觸發的推播內容</p> </div> </div> <button onClick={() => setPushTemplates(p => ({ ...p, is_enabled: !p.is_enabled }))} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${pushTemplates.is_enabled ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`} > {pushTemplates.is_enabled ? <ToggleRight size={24}/> : <ToggleLeft size={24}/>} <span className="text-[10px] font-black uppercase">{pushTemplates.is_enabled ? 'ON' : 'OFF'}</span> </button> </div> <div className={`space-y-8 transition-opacity ${pushTemplates.is_enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}> <div className="space-y-4"> <TemplateEditor title="破紀錄通知" icon={<Flame size={12}/>} colorClass="text-chiachia-green" data={pushTemplates} setData={setPushTemplates} fieldPrefix="new_record" timingNote="每日 23:00" onTest={handleTestBroadcast} variableType="data" /> </div> <div className="pt-4 sticky bottom-0 bg-gradient-to-t from-zinc-950 to-transparent pb-2"> <button onClick={handleSavePushTemplates} disabled={isSavingTemplates} className="w-full py-4 bg-chiachia-green text-black font-black rounded-2xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 text-sm"> {isSavingTemplates ? <Loader2 size={18} className="animate-spin"/> : <Check size={18} />} {isSavingTemplates ? '儲存中...' : '確認儲存設定'} </button> </div> </div> </div> </div> </> ); }
               if (pushView === 'share_config') {
@@ -760,8 +737,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                           </div>
                           <div className="px-4 py-4 pb-28 space-y-6">
                               <div className="glass-card p-6 rounded-3xl space-y-6 border border-chiachia-green/20 bg-chiachia-green/5">
-                                  
-                                  {/* Course Section */}
                                   <div className="space-y-3">
                                       <div className="flex items-center gap-3 mb-2">
                                           <div className="w-8 h-8 rounded-full bg-chiachia-green/10 flex items-center justify-center text-chiachia-green"><CalendarDays size={16} /></div>
@@ -778,10 +753,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                           placeholder="例如：請準時出席，若無法出席請提前請假。"
                                       />
                                   </div>
-
                                   <div className="h-px bg-white/10 w-full"></div>
-
-                                  {/* Race Section */}
                                   <div className="space-y-3">
                                       <div className="flex items-center gap-3 mb-2">
                                           <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500"><Trophy size={16} /></div>
@@ -798,7 +770,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                           placeholder="例如：請穿著隊服，提早 30 分鐘報到。"
                                       />
                                   </div>
-
                                   <div className="pt-2">
                                       <button onClick={handleSavePushTemplates} disabled={isSavingTemplates} className="w-full py-4 bg-chiachia-green text-black font-black rounded-2xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 text-sm">
                                           {isSavingTemplates ? <Loader2 size={18} className="animate-spin"/> : <Check size={18} />} {isSavingTemplates ? '儲存中...' : '確認儲存設定'}
@@ -811,7 +782,8 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
               }
           }
           if(adminView === 'players') { 
-              const sortedPeople = people.filter((p: any) => !p.is_hidden && p.roles?.includes(ROLES.RIDER)).sort(sortPeopleByRole); 
+              // 🟢 修改點：人員管理主列表，包含RIDER與RACING的選手
+              const sortedPeople = people.filter((p: any) => !p.is_hidden && (p.roles?.includes(ROLES.RIDER) || p.roles?.includes(ROLES.RACING))).sort(sortPeopleByRole); 
               return ( 
                 <> 
                     <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> 
@@ -864,7 +836,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                   <MenuCard title="庫存" icon={<InventoryIcon/>} onClick={() => setTicketView('inventory')} description="錢包與儲值" disabled={!courseSystemEnabled} badge={ticketRequests.length} />
                                   <MenuCard title="定價" icon={<Tag/>} onClick={() => setTicketView('pricing')} description="票價與規則" disabled={!courseSystemEnabled} />
                                   <MenuCard title="帳務" icon={<FileBarChart/>} onClick={() => { loadFinancialReport(); setTicketView('report'); }} description="財務報表" disabled={!courseSystemEnabled} />
-<MenuCard title="收款帳號" icon={<Banknote/>} onClick={() => { setModalType('bank_account'); setShowModal(true); }} description="設定匯款帳戶" disabled={!courseSystemEnabled} />
+                                  <MenuCard title="收款帳號" icon={<Banknote/>} onClick={() => { setModalType('bank_account'); setShowModal(true); }} description="設定匯款帳戶" disabled={!courseSystemEnabled} />
                               </div>
                           </div>
                       </>
@@ -873,11 +845,8 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
           }
 
           if(adminView === 'tickets' || (adminView === 'course_ticket' && ticketView !== 'menu')) { 
-              // ... (Same ticket logic) ...
-
-              // ... (Other ticket views omitted for brevity, logic preserved) ...
               if (ticketView === 'inventory') {
-                  const riderWallets = people.filter(p => p.roles && p.roles.includes('RIDER') && !p.roles.includes('DEV')).sort(sortRiders).map(p => {
+                  const riderWallets = people.filter(p => p.roles && (p.roles.includes('RIDER') || p.roles.includes('RACING')) && !p.roles.includes('DEV')).sort(sortRiders).map(p => {
                       const wallet = wallets.find(w => String(w.people_id) === String(p.id));
                       return wallet || { people_id: p.id, person_name: p.name, regular_balance: 0, racing_balance: 0, batches: [] };
                   });
@@ -933,12 +902,10 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                                         e.stopPropagation(); 
                                                         if(courseSystemEnabled) { 
                                                             if (hasPermission(user, PERMISSIONS.TICKET_MANAGE) || hasRole(user, ROLES.DEV)) {
-                                                                // Admin: Direct adjustment
                                                                 setFormData({ people_id: w.people_id, type: 'REGULAR', amount: 1, expiry_date: format(endOfMonth(addMonths(new Date(), 1)), 'yyyy-MM-dd') });
                                                                 setModalType('manual_ticket');
                                                                 setShowModal(true);
                                                             } else {
-                                                                // User: Purchase request
                                                                 setFormData({ people_id: w.people_id, type: 'REGULAR', amount: 4, expiry_date: format(endOfMonth(addMonths(new Date(), 1)), 'yyyy-MM-dd') }); 
                                                                 setModalType('ticket'); 
                                                                 setShowModal(true); 
@@ -1038,16 +1005,13 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                 );
               }
               if (ticketView === 'report') {
-                 // Mock chart data if not available
                  const chartData = financialReport?.daily_stats || [];
-                 
                  return (
                      <>
                          <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title="財務報表" onBack={() => setTicketView('menu')} /> </div>
                          <div className="px-4 py-4 pb-28 space-y-4">
                              {financialReport && (
                                  <>
-                                     {/* Date Filter - Moved to Top */}
                                      <div className="flex flex-col items-end gap-2 mb-2">
                                          <div className="flex bg-zinc-900 rounded-lg p-1 border border-white/5 shadow-lg">
                                              {(['1W', '1M', '3M', 'ALL', 'CUSTOM'] as const).map(range => (
@@ -1074,7 +1038,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                              </div>
                                          )}
                                      </div>
-
                                      <div className="grid grid-cols-2 gap-4">
                                          <div className="glass-card p-5 rounded-3xl col-span-2 border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.3)]"> 
                                             <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5 mb-1"><Banknote size={12} className="text-chiachia-green"/> Total Revenue</div> 
@@ -1089,8 +1052,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                             <div className="text-2xl font-black text-rose-400 font-mono">{financialReport.tickets_used} <span className="text-[10px] text-zinc-600">tickets</span></div> 
                                          </div>
                                      </div>
-                                     
-                                     {/* Financial Chart */}
                                      {chartData.length > 0 ? (
                                          <div className="glass-card p-5 rounded-3xl border border-white/10 mt-2">
                                              <div className="flex justify-between items-center mb-6">
@@ -1115,8 +1076,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                              No Chart Data Available
                                          </div>
                                      )}
-
-                                      {/* Monthly Overview (Last 12 Months) */}
                                       <div className="glass-card p-5 rounded-3xl border border-white/10 mt-6 shadow-xl">
                                           <div className="flex items-center justify-between mb-6">
                                               <div className="flex items-center gap-2">
@@ -1129,7 +1088,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                                   <button onClick={() => setReportYear(y => y + 1)} className="p-1 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"><ChevronRight size={14}/></button>
                                               </div>
                                           </div>
-                                          
                                           {financialReport.monthly_stats && financialReport.monthly_stats.length > 0 ? (
                                               <>
                                                   <div className="overflow-hidden rounded-2xl border border-white/5 bg-zinc-950/50">
@@ -1164,7 +1122,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                                                           </tbody>
                                                       </table>
                                                   </div>
-                                                  
                                                   <div className="mt-4 p-3 bg-zinc-900/30 rounded-xl border border-white/5 flex justify-between items-center">
                                                       <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Annual Total</div>
                                                       <div className="flex gap-4">
@@ -1201,7 +1158,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
           if(adminView === 'training' || adminView === 'series') { const isTraining = adminView === 'training'; const items = isTraining ? trainingTypes : raceGroups; return ( <> <div className="sticky top-0 z-50 bg-black/90 backdrop-blur-md px-4 pt-4 pb-2 border-b border-white/5"> <Header title={isTraining ? "訓練項目" : "賽事系列"} onBack={() => setAdminView('menu')} onAdd={() => { setFormData({}); setIsEditMode(false); setModalType('config'); setShowModal(true); }} /> </div> <div className="px-4 py-4 pb-28"> <div className="space-y-2"> {(items || []).map((it: any) => ( <div key={it.id} className="glass-card p-4 rounded-2xl flex justify-between items-center"> <span className={`text-white font-bold ${it.is_default && isTraining ? 'text-chiachia-green font-black drop-shadow-glow' : ''}`}> {isTraining ? it.type_name : it.series_name} {!!it.is_default && isTraining && <span className="ml-2 text-[8px] bg-chiachia-green text-black px-1 py-0.5 rounded uppercase">Default</span>} </span> <button onClick={() => { setFormData({ id: it.id, name: isTraining ? it.type_name : it.series_name, is_default: it.is_default }); setIsEditMode(true); setModalType('config'); setShowModal(true); }} className="p-2 bg-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-colors border border-white/5 active:scale-95"> <Edit2 size={16}/> </button> </div> ))} </div> </div> </> ); }
           return null;
       } else {
-          // ... (Keep existing user profile render) ...
           const age = user.birthday ? differenceInYears(new Date(), new Date(user.birthday)) : '--';
           return ( 
              <> 
@@ -1228,80 +1184,74 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                     </div> 
                 </div> 
               </>
-           );
-        }
-        return null;
-    };
+          );
+      }
+      return null;
+  };
 
-    return (
-        <>
-            {renderContent()}
-            {/* CONFIRM MODAL */}
-                  {confirmModal && createPortal(
-                      <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-                          <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center">
-                              <h3 className="text-xl font-black text-white italic mb-2">{confirmModal.title}</h3>
-                              <p className="text-zinc-400 text-sm font-bold mb-6">{confirmModal.message}</p>
-                              <div className="grid grid-cols-2 gap-3">
-                                  <button onClick={() => setConfirmModal(null)} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl active:bg-zinc-700 transition-colors">取消</button>
-                                  <button onClick={confirmModal.onConfirm} className="py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center">
-                                      {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : '確認'}
-                                  </button>
-                              </div>
-                          </div>
-                      </div>,
-                      document.body
-                  )}
-                  
-                  {/* SUCCESS MODAL */}
-                  {successModal && successModal.show && createPortal(
-                      <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in">
-                          <div className="glass-card w-full max-w-xs rounded-3xl p-8 border-chiachia-green/20 text-center animate-scale-in flex flex-col items-center gap-4 shadow-[0_0_30px_rgba(57,231,95,0.1)]">
-                              <div className="w-16 h-16 rounded-full bg-zinc-900 border border-chiachia-green/30 flex items-center justify-center text-chiachia-green shadow-glow-green mb-2">
-                                  <Check size={32} strokeWidth={3} />
-                              </div>
-                              <div>
-                                  <h3 className="text-xl font-black text-white italic mb-2">{successModal.title}</h3>
-                                  <p className="text-zinc-400 text-sm font-bold leading-relaxed">{successModal.message}</p>
-                              </div>
-                              <button onClick={() => setSuccessModal(null)} className="w-full py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all mt-4">
-                                  我知道了
-                              </button>
-                          </div>
-                      </div>,
-                      document.body
-                  )}
+  return (
+    <>
+      {renderContent()}
+      {confirmModal && createPortal(
+          <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+              <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center">
+                  <h3 className="text-xl font-black text-white italic mb-2">{confirmModal.title}</h3>
+                  <p className="text-zinc-400 text-sm font-bold mb-6">{confirmModal.message}</p>
+                  <div className="grid grid-cols-2 gap-3">
+                      <button onClick={() => setConfirmModal(null)} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl active:bg-zinc-700 transition-colors">取消</button>
+                      <button onClick={confirmModal.onConfirm} className="py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center">
+                          {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : '確認'}
+                      </button>
+                  </div>
+              </div>
+          </div>,
+          document.body
+      )}
+      
+      {successModal && successModal.show && createPortal(
+          <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in">
+              <div className="glass-card w-full max-w-xs rounded-3xl p-8 border-chiachia-green/20 text-center animate-scale-in flex flex-col items-center gap-4 shadow-[0_0_30px_rgba(57,231,95,0.1)]">
+                  <div className="w-16 h-16 rounded-full bg-zinc-900 border border-chiachia-green/30 flex items-center justify-center text-chiachia-green shadow-glow-green mb-2">
+                      <Check size={32} strokeWidth={3} />
+                  </div>
+                  <div>
+                      <h3 className="text-xl font-black text-white italic mb-2">{successModal.title}</h3>
+                      <p className="text-zinc-400 text-sm font-bold leading-relaxed">{successModal.message}</p>
+                  </div>
+                  <button onClick={() => setSuccessModal(null)} className="w-full py-3 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all mt-4">
+                      我知道了
+                  </button>
+              </div>
+          </div>,
+          document.body
+      )}
 
+      {rejectModal.show && createPortal(
+          <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+              <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center">
+                  <h3 className="text-xl font-black text-white italic mb-2">退回請求</h3>
+                  <div className="space-y-3 mb-4">
+                      <textarea 
+                          rows={3} 
+                          placeholder="退回原因 (選填)" 
+                          value={rejectReason} 
+                          onChange={e => setRejectReason(e.target.value)} 
+                          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-rose-500/50 text-sm"
+                      />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                      <button onClick={() => setRejectModal({ show: false })} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl active:bg-zinc-700 transition-colors">取消</button>
+                      <button onClick={handleRejectRequest} className="py-3 bg-rose-500 text-white font-black rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center">
+                          {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : '確認退回'}
+                      </button>
+                  </div>
+              </div>
+          </div>,
+          document.body
+      )}
 
-                  {/* REJECT MODAL */}
-                  {rejectModal.show && createPortal(
-                      <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-                          <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-white/10 text-center">
-                              <h3 className="text-xl font-black text-white italic mb-2">退回請求</h3>
-                              <div className="space-y-3 mb-4">
-                                  <textarea 
-                                      rows={3} 
-                                      placeholder="退回原因 (選填)" 
-                                      value={rejectReason} 
-                                      onChange={e => setRejectReason(e.target.value)} 
-                                      className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-rose-500/50 text-sm"
-                                  />
-                              </div>
-                              <div className="grid grid-cols-2 gap-3">
-                                  <button onClick={() => setRejectModal({ show: false })} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl active:bg-zinc-700 transition-colors">取消</button>
-                                  <button onClick={handleRejectRequest} className="py-3 bg-rose-500 text-white font-black rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center">
-                                      {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : '確認退回'}
-                                  </button>
-                              </div>
-                          </div>
-                      </div>,
-                      document.body
-                  )}
+      {showModal && modalType === 'parent_edit' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">編輯檔案</h3> </div> <div className="space-y-4"> <div className="w-full"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 block">檔案照片預覽</label> <div className="relative w-full aspect-[4/5] rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden group"> {user?.b_url ? <img src={user.b_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center flex-col gap-2 text-zinc-600"><ImageIcon size={32}/><span className="text-[10px] font-bold">無封面</span></div>} <label htmlFor="upload-cover-edit" className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"> <Camera size={24} className="text-white drop-shadow-lg mb-1"/> <span className="text-[10px] text-white font-bold bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">更換封面</span> </label> <input type="file" accept="image/*" className="hidden" id="upload-cover-edit" onChange={(e) => handleFileSelect(e, 'b')} /> <div className="absolute bottom-3 left-3 w-20 h-20 rounded-3xl border-2 border-white bg-zinc-950 overflow-hidden shadow-lg z-20 group/avatar"> {user?.s_url ? <img src={user.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><UserCircle2 size={32}/></div>} <label htmlFor="upload-avatar-edit" className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer"> <Camera size={20} className="text-white drop-shadow-md"/> </label> <input type="file" accept="image/*" className="hidden" id="upload-avatar-edit" onChange={(e) => handleFileSelect(e, 's')} /> </div> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">暱稱 (顯示名稱)</label> <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">全名 (真實姓名)</label> <input type="text" value={formData.full_name || ''} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">生日</label> <input type="date" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 min-w-0"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">個人宣言</label> <textarea rows={3} value={formData.myword || ''} onChange={e => setFormData({...formData, myword: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-sm"/> </div> <button onClick={handleUpdateSelf} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} {isSubmitting ? '儲存中...' : '儲存變更'} </button> </div> </div> </div> , document.body)}
 
-                  {/* EDIT PROFILE MODAL */}
-                  {showModal && modalType === 'parent_edit' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">編輯檔案</h3> </div> <div className="space-y-4"> <div className="w-full"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 block">檔案照片預覽</label> <div className="relative w-full aspect-[4/5] rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden group"> {user?.b_url ? <img src={user.b_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center flex-col gap-2 text-zinc-600"><ImageIcon size={32}/><span className="text-[10px] font-bold">無封面</span></div>} <label htmlFor="upload-cover-edit" className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"> <Camera size={24} className="text-white drop-shadow-lg mb-1"/> <span className="text-[10px] text-white font-bold bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">更換封面</span> </label> <input type="file" accept="image/*" className="hidden" id="upload-cover-edit" onChange={(e) => handleFileSelect(e, 'b')} /> <div className="absolute bottom-3 left-3 w-20 h-20 rounded-3xl border-2 border-white bg-zinc-950 overflow-hidden shadow-lg z-20 group/avatar"> {user?.s_url ? <img src={user.s_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><UserCircle2 size={32}/></div>} <label htmlFor="upload-avatar-edit" className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer"> <Camera size={20} className="text-white drop-shadow-md"/> </label> <input type="file" accept="image/*" className="hidden" id="upload-avatar-edit" onChange={(e) => handleFileSelect(e, 's')} /> </div> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">暱稱 (顯示名稱)</label> <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">全名 (真實姓名)</label> <input type="text" value={formData.full_name || ''} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">生日</label> <input type="date" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 min-w-0"/> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">個人宣言</label> <textarea rows={3} value={formData.myword || ''} onChange={e => setFormData({...formData, myword: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 text-sm"/> </div> <button onClick={handleUpdateSelf} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} {isSubmitting ? '儲存中...' : '儲存變更'} </button> </div> </div> </div> , document.body)}
-
-                  {/* BANK ACCOUNT MODAL */}
       {showModal && modalType === 'bank_account' && createPortal(
         <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
           <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
@@ -1327,69 +1277,68 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
         document.body
       )}
 
-      {/* PLAYER MANAGEMENT MODAL */}
-                  {showModal && modalType === 'player' && createPortal(
-                    <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
-                        <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center border-b border-white/5 pb-4 gap-3">
-                                <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button>
-                                <h3 className="text-xl font-black text-white italic">{isEditMode ? '編輯選手' : '新增選手'}</h3>
-                            </div>
-                            <div className="space-y-4">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">暱稱 (登入名稱)</label>
-                                    <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold" placeholder="例如: 小明"/>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">全名 (真實姓名)</label>
-                                    <input type="text" value={formData.full_name || ''} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50" placeholder="例如: 王小明"/>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">生日</label>
-                                    <input type="date" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">角色權限</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {[ROLES.RIDER, ROLES.AIDE, ROLES.COACH, ROLES.RACING].map(role => (
-                                            <button key={role} onClick={() => handleToggleRole(role)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${formData.roles?.includes(role) ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>
-                                                {role}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                {isEditMode && (
-                                    <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-xl border border-white/5">
-                                        <div className="flex items-center gap-2">
-                                            <div className={`w-2 h-2 rounded-full ${formData.is_hidden ? 'bg-zinc-600' : 'bg-chiachia-green'}`}></div>
-                                            <span className="text-xs font-bold text-zinc-300">{formData.is_hidden ? '已隱藏 (退休)' : '顯示中 (在役)'}</span>
-                                        </div>
-                                        <button onClick={() => setFormData({...formData, is_hidden: !formData.is_hidden})} className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase border ${formData.is_hidden ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-800 border-white/10 text-zinc-500'}`}>
-                                            {formData.is_hidden ? '恢復顯示' : '隱藏選手'}
-                                        </button>
-                                    </div>
-                                )}
-                                
-                                {isEditMode && (
-                                    <div className="pt-2 border-t border-white/5">
-                                        <button onClick={handleResetPassword} className="w-full py-3 bg-zinc-900 text-zinc-400 font-bold rounded-xl border border-white/10 active:scale-95 transition-all flex items-center justify-center gap-2 text-xs">
-                                            {resetStatus === 'success' ? <CheckCircle2 size={14} className="text-chiachia-green" /> : <RotateCcw size={14} />}
-                                            {resetStatus === 'success' ? '密碼已重設為 123456' : resetStatus === 'error' ? '重設失敗' : '重設密碼為 123456'}
-                                        </button>
-                                    </div>
-                                )}
-
-                                <button onClick={isEditMode ? handleEditPerson : handleAddPerson} disabled={isSubmitting || !formData.name} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2">
-                                    {isSubmitting && <Loader2 size={18} className="animate-spin" />}
-                                    {isSubmitting ? '處理中...' : (isEditMode ? '儲存變更' : '確認新增')}
+      {showModal && modalType === 'player' && createPortal(
+        <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
+            <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar mb-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center border-b border-white/5 pb-4 gap-3">
+                    <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button>
+                    <h3 className="text-xl font-black text-white italic">{isEditMode ? '編輯選手' : '新增選手'}</h3>
+                </div>
+                <div className="space-y-4">
+                    <div className="space-y-1">
+                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">暱稱 (登入名稱)</label>
+                        <input type="text" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50 font-bold" placeholder="例如: 小明"/>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">全名 (真實姓名)</label>
+                        <input type="text" value={formData.full_name || ''} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50" placeholder="例如: 王小明"/>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">生日</label>
+                        <input type="date" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-chiachia-green/50"/>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">角色權限</label>
+                        <div className="flex flex-wrap gap-2">
+                            {[ROLES.RIDER, ROLES.AIDE, ROLES.COACH, ROLES.RACING].map(role => (
+                                <button key={role} onClick={() => handleToggleRole(role)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${formData.roles?.includes(role) ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>
+                                    {role}
                                 </button>
-                            </div>
+                            ))}
                         </div>
-                    </div>,
-                    document.body
-                  )}
+                    </div>
+                    {isEditMode && (
+                        <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-xl border border-white/5">
+                            <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${formData.is_hidden ? 'bg-zinc-600' : 'bg-chiachia-green'}`}></div>
+                                <span className="text-xs font-bold text-zinc-300">{formData.is_hidden ? '已隱藏 (退休)' : '顯示中 (在役)'}</span>
+                            </div>
+                            <button onClick={() => setFormData({...formData, is_hidden: !formData.is_hidden})} className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase border ${formData.is_hidden ? 'bg-chiachia-green border-chiachia-green text-black' : 'bg-zinc-800 border-white/10 text-zinc-500'}`}>
+                                {formData.is_hidden ? '恢復顯示' : '隱藏選手'}
+                            </button>
+                        </div>
+                    )}
+                    
+                    {isEditMode && (
+                        <div className="pt-2 border-t border-white/5">
+                            <button onClick={handleResetPassword} className="w-full py-3 bg-zinc-900 text-zinc-400 font-bold rounded-xl border border-white/10 active:scale-95 transition-all flex items-center justify-center gap-2 text-xs">
+                                {resetStatus === 'success' ? <CheckCircle2 size={14} className="text-chiachia-green" /> : <RotateCcw size={14} />}
+                                {resetStatus === 'success' ? '密碼已重設為 123456' : resetStatus === 'error' ? '重設失敗' : '重設密碼為 123456'}
+                            </button>
+                        </div>
+                    )}
 
-                  {/* CONFIG MODAL (Training Types / Race Series) */}
+                    <button onClick={isEditMode ? handleEditPerson : handleAddPerson} disabled={isSubmitting || !formData.name} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2">
+                        {isSubmitting && <Loader2 size={18} className="animate-spin" />}
+                        {isSubmitting ? '處理中...' : (isEditMode ? '儲存變更' : '確認新增')}
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body
+      )}
+
+      {/* CONFIG MODAL */}
                   {showModal && modalType === 'config' && createPortal(
                     <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}>
                         <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}>
@@ -1519,7 +1468,7 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                     document.body
                   )}
 
-                  {/* MANUAL TICKET MODAL (ADMIN) */}
+                  {/* MANUAL TICKET MODAL */}
                   {showModal && modalType === 'manual_ticket' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">庫存調整</h3> </div> 
                     <div className="space-y-4"> 
                         <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">類型</label> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setFormData({...formData, type: 'REGULAR'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'REGULAR' ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>一般課</button> <button onClick={() => setFormData({...formData, type: 'RACING'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'RACING' ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>競速班</button> </div> </div> 
@@ -1532,7 +1481,6 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                         if (!formData.amount || Number(formData.amount) === 0) return alert('請輸入數量');
                         setIsSubmitting(true);
                         try {
-                            // Use existing manual add API but adapted
                             await api.manualAddTickets({
                                 people_id: formData.people_id,
                                 type: formData.type,
@@ -1548,11 +1496,8 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
                     }} disabled={isSubmitting} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting ? <Loader2 size={18} className="animate-spin"/> : <Check size={18}/>} 確認調整 </button> 
                   </div> </div> , document.body)}
 
-                  {/* MANUAL MODAL */}
                   {showModal && modalType === 'manual' && <ManualModal user={user} onClose={() => setShowModal(false)} />}
                   
-                  {/* ... (Other modals like my_tickets, change_password etc. remain) ... */}
-                  {/* MY TICKETS MODAL */}
                   {showModal && modalType === 'my_tickets' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-0 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-0 h-[85vh] overflow-hidden shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> 
                         <div className="flex items-center justify-between border-b border-white/5 p-6 pb-4 shrink-0"> <div className="flex items-center gap-3"> <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><X size={18}/></button> <h3 className="text-xl font-black text-white italic">我的票卷</h3> </div> <button onClick={() => { setFormData({ people_id: user.id, type: 'REGULAR', amount: 4, last5: localStorage.getItem('CHIACHIA_LAST5') || '' }); setModalType('ticket'); }} className="px-3 py-1.5 bg-chiachia-green/20 text-chiachia-green rounded-lg text-xs font-bold border border-chiachia-green/30 active:scale-95">購買票卷</button> </div> 
                         <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-4"> <div className="grid grid-cols-2 gap-3"> <div className="bg-zinc-900 p-4 rounded-2xl border border-white/10 text-center"> <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest block mb-1">一般課</span> <span className="text-3xl font-mono font-black text-blue-400">{myWallet?.regular_balance || 0}</span> </div> <div className="bg-zinc-900 p-4 rounded-2xl border border-white/10 text-center"> <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest block mb-1">競速班</span> <span className="text-3xl font-mono font-black text-amber-400">{myWallet?.racing_balance || 0}</span> </div> </div> <button onClick={() => { setSelectedHistoryPerson(user); loadFinancialHistory(user.id); setModalType('history'); setShowModal(true); }} className="w-full py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl border border-white/5 active:scale-95 transition-all flex items-center justify-center gap-2 text-xs"> <History size={14} /> 查看交易紀錄 </button> <div className="space-y-2"> <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">詳細批次</div> {myWallet && myWallet.batches && myWallet.batches.length > 0 ? myWallet.batches.map((b, idx) => ( <div key={idx} className={`flex justify-between items-center text-xs px-4 py-3 rounded-xl border ${b.type === 'REGULAR' ? 'bg-blue-500/10 text-blue-300 border-blue-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}> <div className="flex items-center gap-2"> <Ticket size={14}/> <span className="font-bold text-sm">{b.type === 'REGULAR' ? '一般卷' : '競速卷'} × {b.amount}</span> </div> <div className="flex items-center gap-1 font-mono opacity-80"> <Clock size={12}/> <span>{b.expiry_date}</span> </div> </div> )) : <div className="text-center text-xs text-zinc-500 py-4 bg-zinc-900/50 rounded-xl">無有效票卷</div>} </div> </div> </div> </div> , document.body)}
@@ -1635,62 +1580,36 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
         document.body
       )}
 
-      {/* CROP MODAL */}
-                  {cropImageSrc && createPortal( <div className="fixed inset-0 z-[99999] bg-black flex flex-col"> <div className="flex-none px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] flex justify-between items-center bg-black z-10 border-b border-white/10"> <button onClick={() => setCropImageSrc(null)} className="w-10 h-10 flex items-center justify-center rounded-full bg-zinc-900 text-zinc-400 active:bg-zinc-800 transition-all"><X size={20} /></button> <span className="text-sm font-black text-white italic tracking-wider">ADJUST PHOTO</span> <button onClick={handleCropSave} className="h-10 px-5 bg-chiachia-green text-black font-black rounded-full flex items-center gap-2 shadow-glow-green active:scale-95 transition-all text-xs"> {uploading ? <Loader2 className="animate-spin" size={14}/> : <Check size={14} />} SAVE </button> </div> <div className="flex-1 relative bg-zinc-900 w-full overflow-hidden"> <SimpleImageCropper image={cropImageSrc} crop={crop} zoom={zoom} aspect={cropAspect} onCropChange={setCrop} onCropComplete={onCropComplete} onZoomChange={setZoom} showGrid={true} style={{ containerStyle: { background: '#000' } }} /> </div> <div className="flex-none px-6 py-6 pb-[calc(env(safe-area-inset-bottom)+2rem)] bg-black flex items-center gap-4 border-t border-white/10"> <ZoomIn size={20} className="text-zinc-500" /> <input type="range" value={zoom} min={1} max={3} step={0.1} aria-labelledby="Zoom" onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-chiachia-green" /> </div> </div> , document.body)}
-                  {/* TICKET PURCHASE MODAL */}
-                  {showModal && modalType === 'ticket' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => { setModalType('my_tickets'); }} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><ArrowLeft size={18}/></button> <h3 className="text-xl font-black text-white italic">購買票卷</h3> </div> 
-                    <div className="space-y-4"> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">類型</label> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setFormData({...formData, type: 'REGULAR'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'REGULAR' ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>一般課 (${ticketPrices.regular_price})</button> <button onClick={() => setFormData({...formData, type: 'RACING'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'RACING' ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>競速班 (${ticketPrices.racing_price})</button> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">數量</label> <input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-2xl font-black outline-none focus:border-chiachia-green/50"/> </div> <div className="p-4 bg-zinc-900 rounded-xl border border-white/10 flex justify-between items-center"> <span className="text-xs font-bold text-zinc-400">預估金額</span> <span className="text-2xl font-black text-chiachia-green font-mono"> ${((formData.type === 'REGULAR' ? ticketPrices.regular_price : ticketPrices.racing_price) * (Number(formData.amount) || 0)).toLocaleString()} </span> </div> <div className="space-y-1">
-                        <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">付款方式</label>
-                        <div className="grid grid-cols-2 gap-3">
-                            <button onClick={() => setPaymentMethod('TRANSFER')} className={`py-3 rounded-xl font-bold border transition-all ${paymentMethod === 'TRANSFER' ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>轉帳</button>
-                            <button onClick={() => setPaymentMethod('LINEPAY')} className={`py-3 rounded-xl font-bold border transition-all ${paymentMethod === 'LINEPAY' ? 'bg-green-500 text-white border-green-500' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>LINE PAY</button>
-                        </div>
+      {cropImageSrc && createPortal( <div className="fixed inset-0 z-[99999] bg-black flex flex-col"> <div className="flex-none px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] flex justify-between items-center bg-black z-10 border-b border-white/10"> <button onClick={() => setCropImageSrc(null)} className="w-10 h-10 flex items-center justify-center rounded-full bg-zinc-900 text-zinc-400 active:bg-zinc-800 transition-all"><X size={20} /></button> <span className="text-sm font-black text-white italic tracking-wider">ADJUST PHOTO</span> <button onClick={handleCropSave} className="h-10 px-5 bg-chiachia-green text-black font-black rounded-full flex items-center gap-2 shadow-glow-green active:scale-95 transition-all text-xs"> {uploading ? <Loader2 className="animate-spin" size={14}/> : <Check size={14} />} SAVE </button> </div> <div className="flex-1 relative bg-zinc-900 w-full overflow-hidden"> <SimpleImageCropper image={cropImageSrc} crop={crop} zoom={zoom} aspect={cropAspect} onCropChange={setCrop} onCropComplete={onCropComplete} onZoomChange={setZoom} showGrid={true} style={{ containerStyle: { background: '#000' } }} /> </div> <div className="flex-none px-6 py-6 pb-[calc(env(safe-area-inset-bottom)+2rem)] bg-black flex items-center gap-4 border-t border-white/10"> <ZoomIn size={20} className="text-zinc-500" /> <input type="range" value={zoom} min={1} max={3} step={0.1} aria-labelledby="Zoom" onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-chiachia-green" /> </div> </div> , document.body)}
+      {showModal && modalType === 'ticket' && createPortal( <div className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]" onClick={() => setShowModal(false)}> <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 shadow-[0_0_20px_rgba(57,231,95,0.15)]" onClick={e => e.stopPropagation()}> <div className="flex items-center border-b border-white/5 pb-4 gap-3"> <button onClick={() => { setModalType('my_tickets'); }} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400"><ArrowLeft size={18}/></button> <h3 className="text-xl font-black text-white italic">購買票卷</h3> </div> 
+        <div className="space-y-4"> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">類型</label> <div className="grid grid-cols-2 gap-3"> <button onClick={() => setFormData({...formData, type: 'REGULAR'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'REGULAR' ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>一般課 (${ticketPrices.regular_price})</button> <button onClick={() => setFormData({...formData, type: 'RACING'})} className={`py-3 rounded-xl font-bold border transition-all ${formData.type === 'RACING' ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>競速班 (${ticketPrices.racing_price})</button> </div> </div> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">數量</label> <input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-2xl font-black outline-none focus:border-chiachia-green/50"/> </div> <div className="p-4 bg-zinc-900 rounded-xl border border-white/10 flex justify-between items-center"> <span className="text-xs font-bold text-zinc-400">預估金額</span> <span className="text-2xl font-black text-chiachia-green font-mono"> ${((formData.type === 'REGULAR' ? ticketPrices.regular_price : ticketPrices.racing_price) * (Number(formData.amount) || 0)).toLocaleString()} </span> </div> <div className="space-y-1">
+            <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">付款方式</label>
+            <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => setPaymentMethod('TRANSFER')} className={`py-3 rounded-xl font-bold border transition-all ${paymentMethod === 'TRANSFER' ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>轉帳</button>
+                <button onClick={() => setPaymentMethod('LINEPAY')} className={`py-3 rounded-xl font-bold border transition-all ${paymentMethod === 'LINEPAY' ? 'bg-green-500 text-white border-green-500' : 'bg-zinc-900 text-zinc-500 border-white/10'}`}>LINE PAY</button>
+            </div>
+        </div>
+        {paymentMethod === 'TRANSFER' && (
+            <>
+                <div className="p-4 bg-zinc-900/50 rounded-xl border border-white/5 space-y-2">
+                    <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">匯款資訊</div>
+                    <div className="flex justify-between items-center text-sm font-bold text-zinc-300">
+                        <span>銀行代碼</span>
+                        <span className="font-mono text-white">{bankAccount.bank_code || 'N/A'}</span>
                     </div>
-                    {paymentMethod === 'TRANSFER' && (
-                        <>
-                            <div className="p-4 bg-zinc-900/50 rounded-xl border border-white/5 space-y-2">
-                                <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">匯款資訊</div>
-                                <div className="flex justify-between items-center text-sm font-bold text-zinc-300">
-                                    <span>銀行代碼</span>
-                                    <span className="font-mono text-white">{bankAccount.bank_code || 'N/A'}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-sm font-bold text-zinc-300">
-                                    <span>銀行帳號</span>
-                                    <span className="font-mono text-white">{bankAccount.account_number || 'N/A'}</span>
-                                </div>
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">您的帳號後五碼</label>
-                                <input type="tel" maxLength={5} value={formData.last5} onChange={e => setFormData({...formData, last5: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-xl font-mono font-bold outline-none focus:border-chiachia-green/50 tracking-widest" placeholder="12345"/>
-                            </div>
-                        </>
-                    )} <button onClick={handleRequestPurchase} disabled={isSubmitting || !formData.amount || !formData.last5} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} 確認送出 </button> </div> </div> </div> , document.body)}
-                  {/* ... (Other existing modals) ... */}
-              </>
-          );
-  }
-
-  // ... (Keep existing login screen) ...
-  if (!user) {
-      if (step === 'selectPerson') { 
-          return ( 
-            <div className="h-full flex flex-col p-6 pb-24"> 
-                <div className="flex items-center justify-between mb-6"> <div className="flex flex-col"> <h2 className="text-2xl font-black text-white italic">SELECT RIDER</h2> <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Login to Access</p> </div> </div> 
-                <div className="grid grid-cols-2 gap-4 overflow-y-auto no-scrollbar pb-20 p-1"> {targetList.map((p: any) => ( <button key={p.id} onClick={() => handleSelectPerson(p)} className="flex flex-col items-center gap-3 p-4 rounded-3xl bg-zinc-900/40 border border-white/5 active:scale-95 transition-all hover:bg-zinc-800"> <Avatar p={p} size="xl" /> <span className="text-lg font-black text-white truncate w-full text-center">{p.name}</span> </button> ))} </div> 
-            </div> 
-          ); 
-      }
-      if (step === 'password') { 
-          return ( 
-            <div className="h-full flex flex-col items-center justify-center p-8 space-y-6 pb-24"> 
-                <button onClick={() => setStep('selectPerson')} className="absolute top-6 left-6 w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 active:bg-zinc-800 transition-all border border-white/5"><ArrowLeft size={20}/></button> 
-                <div className="flex flex-col items-center gap-4 mb-4"> <Avatar p={selectedPerson} size="2xl" /> <h2 className="text-2xl font-black text-white italic">{selectedPerson?.name}</h2> </div>
-                <div className="w-full max-w-xs space-y-4"> <div className="space-y-1"> <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest text-center block">Enter Password</label> <input ref={passwordInputRef} type="password" inputMode="numeric" pattern="[0-9]*" maxLength={12} value={loginPass} onChange={e => setLoginPass(e.target.value)} className="w-full bg-zinc-900 border border-white/10 rounded-2xl px-4 py-4 text-white text-center text-2xl font-bold outline-none focus:border-chiachia-green/50 tracking-[0.5em] placeholder:text-zinc-800 transition-colors" placeholder="••••••" /> </div> {errorMsg && <div className="text-rose-500 text-xs font-bold text-center animate-pulse bg-rose-500/10 py-2 rounded-xl border border-rose-500/20">{errorMsg}</div>} <button onClick={handleLogin} disabled={isLoggingIn || !loginPass} className="w-full h-14 bg-chiachia-green text-black font-black text-lg rounded-2xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale mt-2"> {isLoggingIn ? <Loader2 size={20} className="animate-spin" /> : <KeyRound size={20} />} {isLoggingIn ? 'VERIFYING...' : 'LOGIN'} </button> </div>
-            </div> 
-          ); 
-      }
-  }
-  return null;
+                    <div className="flex justify-between items-center text-sm font-bold text-zinc-300">
+                        <span>銀行帳號</span>
+                        <span className="font-mono text-white">{bankAccount.account_number || 'N/A'}</span>
+                    </div>
+                </div>
+                <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">您的帳號後五碼</label>
+                    <input type="tel" maxLength={5} value={formData.last5} onChange={e => setFormData({...formData, last5: e.target.value})} className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-xl font-mono font-bold outline-none focus:border-chiachia-green/50 tracking-widest" placeholder="12345"/>
+                </div>
+            </>
+        )} <button onClick={handleRequestPurchase} disabled={isSubmitting || !formData.amount || !formData.last5} className="w-full py-4 bg-chiachia-green text-black font-black rounded-xl shadow-glow-green active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"> {isSubmitting && <Loader2 size={18} className="animate-spin" />} 確認送出 </button> </div> </div> </div> , document.body)}
+    </>
+  );
 };
 
 export default Settings;
