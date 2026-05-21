@@ -295,6 +295,19 @@ const App: React.FC = () => {
             setCurrentPage('dashboard');
             return;
         }
+
+    if (user) {
+            // 先判斷是否為選手角色 (排除教練/開發者)
+            const isOnlyRider = hasRole(user, ROLES.RACING) && !hasRole(user, ROLES.COACH) && !hasRole(user, ROLES.DEV);          
+            if (isOnlyRider) {
+                const matchedPerson = people.find(p => String(p.user_id) === String(user.id));
+                
+                if (matchedPerson) {
+                    handleUpdateActivePerson(matchedPerson.id);
+                }
+            }
+            // 如果是教練/管理職，保持原樣即可，不需要額外處理
+        }        
     }
 
     // Require Login for Races AND Courses

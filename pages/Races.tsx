@@ -475,8 +475,8 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
         <div className="absolute top-0 left-0 right-0 z-40 bg-zinc-950/80 backdrop-blur-xl border-b border-white/5 px-4 py-4 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
-              <h2 className="text-2xl font-russo text-white tracking-tight italic transform -skew-x-12 leading-none">ARENA</h2>
-              <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mt-1">Race Tracking System</p>
+              <h2 className="text-xs font-black text-zinc-600 tracking-[0.3em] uppercase">Race Events</h2>
+              <div className="text-2xl font-black text-white italic tracking-tight">賽事總覽</div>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => setIsDateMenuOpen(!isDateMenuOpen)} className="h-10 px-4 rounded-xl border border-white/5 bg-zinc-900/60 text-xs font-black uppercase tracking-wider text-zinc-400 flex items-center gap-2 active:scale-95 transition-all">
