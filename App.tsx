@@ -456,11 +456,12 @@ const App: React.FC = () => {
       courseSystemEnabled={courseSystemEnabled}
       isOffline={isOffline}
     >
-      {api.getUser()?.must_change_password && (
+      {renderPage()}
+      {/*api.getUser()?.must_change_password && (
       <div className="fixed inset-0 z-[100000] bg-black/95 backdrop-blur-md flex items-center justify-center">
         <ChangePasswordModal onComplete={() => window.location.reload()} />
       </div>
-      )}
+      )} */
       
       {/* PWA Install Prompt */}
       <InstallPwaModal />
