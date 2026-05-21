@@ -237,13 +237,31 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   };
 
   // 🟢 修正：防禦型參數綁定，絕對不允許發送 undefined 導致前端死機
+const openJoinModal = (event: RaceEvent, participant?: RaceParticipant) => {
+    if (participant) {
+      setJoinForm({
+        value: participant.value || '',
+        race_group: participant.race_group || '',
+        note: participant.note || '',
+        photo_url: participant.photo_url || ''
+      });
+      // 確保管理員代報名或選手自己改資料時，ID 有被正確綁定
+      setSelectedPeopleId(String(participant.people_id || participant.id));
+    } else {
+      setJoinForm({ value: '', race_group: '', note: '', photo_url: '' });
+      setSelectedPeopleId(user ? String(user.id) : '');
+    }
+    setShowJoinModal({ show: true, event, participant });
+  };
+
   const handleJoin = async () => {
     const { event } = showJoinModal;
     if (!event) return;
-    
-    const targetPeopleId = selectedPeopleId || (user ? String(user.id) : '');
-    if (!targetPeopleId) {
-      alert('無法取得有效的報名隊員身分');
+
+    // 防禦型修正：優先取用選單的 ID，沒有就拿當前登入者 ID，確保絕對不會是 undefined
+    const finalPeopleId = selectedPeopleId || (user ? String(user.id) : '');
+    if (!finalPeopleId) {
+      alert("找不到有效的選手身分，無法報名");
       return;
     }
 
@@ -251,7 +269,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     try {
       const res = await api.submitRaceRecord({
         event_id: Number(event.id),
-        people_id: Number(targetPeopleId),
+        people_id: Number(finalPeopleId),
         value: joinForm.value,
         race_group: joinForm.race_group,
         note: joinForm.note,
@@ -262,7 +280,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
         setShowJoinModal({ show: false });
       }
     } catch (e) {
-      alert('登記參賽失敗');
+      console.error("Join API Error", e);
     } finally {
       setSubmitting(false);
     }
@@ -345,16 +363,20 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     if (!participant) return;
     setSubmitting(true);
     try {
-      // 🟢 修正時間比對邏輯，相容 Unix 戳記與日期格式
-      const expiryTime = participant.global_honor_expires_at || 0;
-      const isActive = expiryTime > now;
-      const duration = isActive ? 0 : 43200; 
-      const res = await api.toggleGlobalHonor(Number(participant.id || participant.people_id), duration);
+      // 🟢 修正：即時取得當下時間戳，並強制將後端欄位轉為數字比對，防止數字與字串比對死機
+      const currentTimestamp = Math.floor(Date.now() / 1000);
+      const expiryTime = Number(participant.global_honor_expires_at) || 0;
+      const isActive = expiryTime > currentTimestamp;
+      const duration = isActive ? 0 : 43200; // 30 天
+      
+      const targetId = participant.id || participant.people_id;
+      const res = await api.toggleGlobalHonor(Number(targetId), duration);
       if (res.success) {
         refreshData();
         setGlobalHonorConfirm({ show: false });
       }
     } catch (e) {
+      console.error("Global Honor Error", e);
       alert('全域榮譽榜更新失敗');
     } finally {
       setSubmitting(false);
