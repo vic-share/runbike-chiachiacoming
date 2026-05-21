@@ -589,13 +589,13 @@ const Settings: React.FC<any> = ({ people, refreshData, trainingTypes, raceGroup
               setUser(res.user); 
               
               // Check for notifications permission
-              if ('Notification' in window && Notification.permission !== 'granted') {
-                  setModalType('settings_menu');
-                  setShowModal(true);
-                  // Don't call onLoginSuccess yet, user sees modal first
-              } else {
-                  if (onLoginSuccess) onLoginSuccess(); 
-              }
+            if (onLoginSuccess) onLoginSuccess();
+            
+            // 推播通知 modal 另外處理，不阻擋登入流程
+            if ('Notification' in window && Notification.permission !== 'granted') {
+                setModalType('settings_menu');
+                setShowModal(true);
+            }
           } else { 
               setErrorMsg(res.msg || "登入失敗"); 
           } 
