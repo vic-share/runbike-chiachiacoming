@@ -304,7 +304,7 @@ const App: React.FC = () => {
         if (isOnlyRider) {
             // 修正：使用 user_id 欄位進行比對，而非 id (避免 ID 混淆)
             // 並使用我們在 auth.ts 定義好的 hasRole 邏輯
-            const selfPerson = activePeople.find(p => String(p.user_id) === String(user.id));
+            const selfPerson = activePeople.find(p => Number(p.id) === Number(user.id));
             
             if (selfPerson) {
                 handleUpdateActivePerson(selfPerson.id);
@@ -316,8 +316,8 @@ const App: React.FC = () => {
             
             if (racingPeople.length > 0) {
                 // 如果你想保持隨機，這段保留；若要固定預設，可改成 racingPeople[0].id
-                const random = racingPeople[Math.floor(Math.random() * racingPeople.length)];
-                handleUpdateActivePerson(random.id);
+              const random = racingPeople[Math.floor(Math.random() * racingPeople.length)];
+              handleUpdateActivePerson(random.id);
             }
         }      
     }
