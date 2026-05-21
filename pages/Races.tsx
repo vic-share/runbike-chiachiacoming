@@ -476,7 +476,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
               <h2 className="text-xs font-black text-zinc-600 tracking-[0.3em] uppercase">Race Events</h2>
-              <div className="text-2xl font-black text-white italic tracking-tight">賽事總覽</div>
+              <div className="text-2xl font-black text-white italic tracking-tight">賽事資訊</div>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => setIsDateMenuOpen(!isDateMenuOpen)} className="h-10 px-4 rounded-xl border border-white/5 bg-zinc-900/60 text-xs font-black uppercase tracking-wider text-zinc-400 flex items-center gap-2 active:scale-95 transition-all">

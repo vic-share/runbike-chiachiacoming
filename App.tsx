@@ -11,8 +11,8 @@ import { api } from './services/api';
 import { DataRecord, LookupItem, TeamInfo, RaceEvent, LegendRecord } from './types';
 import { LockKeyhole, Loader2 } from 'lucide-react';
 // 🟢 匯入權限判定清單與工具
-import { hasPermission, PERMISSIONS } from './utils/auth';
 import ChangePasswordModal from './components/ChangePassword';
+import { hasRole, hasPermission, ROLES, PERMISSIONS } from './utils/auth';
 
 const DEFAULT_NAME = '睿睿';
 
@@ -291,21 +291,34 @@ const App: React.FC = () => {
     // 直接強制轉回「總覽 (dashboard)」，達到雙重安全防護
     if (targetPage === 'training') {
         const user = api.getUser();
+        
+        // 1. 權限檢查
         if (!hasPermission(user, PERMISSIONS.RACING_DATA_VIEW)) {
             setCurrentPage('dashboard');
             return;
         }
 
-        if (hasRole(user, ROLES.RACING) && !hasRole(user, ROLES.COACH) && !hasRole(user, ROLES.DEV)) {
-          const selfPerson = activePeople.find(p => String(p.id) === String(user.id));
-          if (selfPerson) handleUpdateActivePerson(selfPerson.id);
+        // 2. 判斷是否為純選手角色 (排除 COACH/DEV/AIDE)
+        const isOnlyRider = hasRole(user, ROLES.RACING) && !hasRole(user, ROLES.COACH) && !hasRole(user, ROLES.DEV);
+
+        if (isOnlyRider) {
+            // 修正：使用 user_id 欄位進行比對，而非 id (避免 ID 混淆)
+            // 並使用我們在 auth.ts 定義好的 hasRole 邏輯
+            const selfPerson = activePeople.find(p => String(p.user_id) === String(user.id));
+            
+            if (selfPerson) {
+                handleUpdateActivePerson(selfPerson.id);
+            }
         } else {
-          // COACH/DEV：隨機選一位 RACING 選手
-          const racingPeople = activePeople.filter(p => String(p.roles).includes('RACING'));
-          if (racingPeople.length > 0) {
-            const random = racingPeople[Math.floor(Math.random() * racingPeople.length)];
-            handleUpdateActivePerson(random.id);
-          }
+            // COACH/DEV/AIDE：預設邏輯
+            // 建議這裡不要用隨機，改用「上次紀錄」或「第一位」，體驗會更穩定
+            const racingPeople = activePeople.filter(p => hasRole(p, ROLES.RACING));
+            
+            if (racingPeople.length > 0) {
+                // 如果你想保持隨機，這段保留；若要固定預設，可改成 racingPeople[0].id
+                const random = racingPeople[Math.floor(Math.random() * racingPeople.length)];
+                handleUpdateActivePerson(random.id);
+            }
         }      
     }
 
