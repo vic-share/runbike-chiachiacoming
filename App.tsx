@@ -466,6 +466,8 @@ const App: React.FC = () => {
         </div>
       )}
       
+
+      
       {/* PWA Install Prompt */}
       <InstallPwaModal />
       
