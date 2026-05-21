@@ -454,8 +454,9 @@ const App: React.FC = () => {
       title="嘉嘉來了"
       subtitle="Chia Chia Coming!"
       courseSystemEnabled={courseSystemEnabled}
-      isOffline={isOffline}
-      
+      isOffline={isOffline} >
+
+    <>
       {renderPage()}
       {/*api.getUser()?.must_change_password && (
       <div className="fixed inset-0 z-[100000] bg-black/95 backdrop-blur-md flex items-center justify-center">
