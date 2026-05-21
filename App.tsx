@@ -47,14 +47,20 @@ const App: React.FC = () => {
   const [targetRaceId, setTargetRaceId] = useState<string | number | null>(null); // For Races
   const [settingsTarget, setSettingsTarget] = useState<string | null>(null); // For Settings (New)
 
+  const [currentUser, setCurrentUser] = useState(api.getUser());
+
+  // 每當 currentPage 變化或重新登入時，手動更新一下 state
   useEffect(() => {
-      const user = api.getUser();
-      console.log("偵測到的使用者物件:", user);
-      if (user && user.must_change_password && currentPage !== 'settings') {
-          console.log("[Auth] 強制檢查：未改密碼，跳轉至設定");
-          handleNavigation('settings');
-      }
-  }, [currentPage]);
+      setCurrentUser(api.getUser());
+  }, [currentPage]); // 這會確保當你登入成功或頁面切換時，UI 會更新
+
+  // 然後把所有的 api.getUser() 換成 currentUser
+  // 例如：
+  {currentUser?.must_change_password && (
+    <div className="fixed inset-0 z-[100000] ...">
+      <ChangePasswordModal onComplete={() => window.location.reload()} />
+    </div>
+  )}
 
   // Offline Detection & Sync
   useEffect(() => {
@@ -335,10 +341,15 @@ const App: React.FC = () => {
   };
 
   const handleLoginSuccess = () => {
-      if (returnPage) {
-          setCurrentPage(returnPage);
-          setReturnPage(null);
-      }
+    const user = api.getUser();
+    setCurrentUser(user);
+    if (user && user.must_change_password) {
+        // 不需要處理導向，直接讓 Layout 監測到狀態，Modal 就會彈出來
+        console.log("[Auth] 偵測到登入後需改密碼");
+    } else if (returnPage) {
+      setCurrentPage(returnPage);
+      setReturnPage(null);
+  }
   };
 
   const renderPage = () => {

@@ -162,7 +162,22 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   }, [raceEvents, dateRangeMode, customDateRange, selectedSeries, tab, search, user]);
 
   const sortedEvents = useMemo(() => {
-    return [...filteredEvents].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const today = startOfDay(new Date());
+    return [...filteredEvents].sort((a, b) => {
+      const dateA = parseISO(a.date);
+      const dateB = parseISO(b.date);
+      const aFinished = !isAfter(dateA, subDays(today, 1));
+      const bFinished = !isAfter(dateB, subDays(today, 1));
+
+      // 結束的排最下方
+      if (aFinished !== bFinished) return aFinished ? 1 : -1;
+
+      // 同為未結束：日期近的排上面（升冪）
+      if (!aFinished && !bFinished) return dateA.getTime() - dateB.getTime();
+
+      // 同為已結束：最近結束的排上面（降冪）
+      return dateB.getTime() - dateA.getTime();
+    });
   }, [filteredEvents]);
 
   const totalPages = Math.ceil(sortedEvents.length / pageSize);
