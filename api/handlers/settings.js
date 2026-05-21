@@ -64,7 +64,7 @@ export const handleSettings = async ({ request, env, path, method, corsHeaders }
     const userId = sessionData.id;
 
     // 驗證舊密碼
-    const person = await getDB().prepare(`SELECT password FROM People WHERE id = ?`).bind(userId).first();
+    const person = await env.RUNBIKE_DB.prepare(`SELECT password FROM People WHERE id = ?`).bind(userId).first();
     if (!person) {
         return Response.json({ success: false, msg: "帳號不存在" }, { status: 404, headers: corsHeaders });
     }
@@ -76,9 +76,7 @@ export const handleSettings = async ({ request, env, path, method, corsHeaders }
 
     // 更新密碼
     const newHash = await hashPassword(newPassword, env.PASSWORD_SALT);
-    await getDB().prepare(`
-        UPDATE People SET password = ?, must_change_password = 0 WHERE id = ?
-    `).bind(newHash, userId).run();
+    await env.RUNBIKE_DB.prepare(`UPDATE People SET password = ?, must_change_password = 0 WHERE id = ?`).bind(newHash, userId).run();
 
     // 更新 KV session 裡的 must_change_password
     await env.RUNBIKE_KV.put(
