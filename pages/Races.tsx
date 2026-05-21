@@ -219,25 +219,8 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     }
   };
 
-  // 🟢 修正：完美確保一般選手報名與管理員代報名的狀態對接
-  const openJoinModal = (event: RaceEvent, participant?: any) => {
-    if (participant) {
-      setJoinForm({
-        value: participant.value || '',
-        race_group: participant.race_group || '',
-        note: participant.note || '',
-        photo_url: participant.photo_url || ''
-      });
-      setSelectedPeopleId(String(participant.people_id || participant.id));
-    } else {
-      setJoinForm({ value: '', race_group: '', note: '', photo_url: '' });
-      setSelectedPeopleId(user ? String(user.id) : '');
-    }
-    setShowJoinModal({ show: true, event, participant });
-  };
 
-  // 🟢 修正：防禦型參數綁定，絕對不允許發送 undefined 導致前端死機
-const openJoinModal = (event: RaceEvent, participant?: RaceParticipant) => {
+  const openJoinModal = (event: RaceEvent, participant?: RaceParticipant) => {
     if (participant) {
       setJoinForm({
         value: participant.value || '',
