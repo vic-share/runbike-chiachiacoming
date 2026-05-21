@@ -12,7 +12,7 @@ import { DataRecord, LookupItem, TeamInfo, RaceEvent, LegendRecord } from './typ
 import { LockKeyhole, Loader2 } from 'lucide-react';
 // 🟢 匯入權限判定清單與工具
 import { hasPermission, PERMISSIONS } from './utils/auth';
-import ChangePasswordModal from './components/ChangePasswordModal';
+import ChangePasswordModal from './components/ChangePassword';
 
 const DEFAULT_NAME = '睿睿';
 
