@@ -79,11 +79,9 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // Form State
   const [createForm, setCreateForm] = useState({ id: '', name: '', date: format(new Date(), 'yyyy-MM-dd'), location: '', series_id: '', url: '' });
   const [joinForm, setJoinForm] = useState({ value: '', race_group: '', note: '', photo_url: '' });
 
-  // Crop State
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -92,9 +90,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   const [uploadTarget, setUploadTarget] = useState<'cover' | 'participant'>('cover');
   const [activeUploadEventId, setActiveUploadEventId] = useState<string | number | null>(null);
 
-  // User & Permissions
   const user = api.getUser();
-  const isRiderMode = user && !hasPermission(user, PERMISSIONS.RACE_MANAGE) && hasRole(user, ROLES.RIDER);
   const canManage = hasPermission(user, PERMISSIONS.RACE_MANAGE) || hasRole(user, ROLES.DEV);
 
   const now = Math.floor(Date.now() / 1000);
@@ -195,7 +191,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     setShowCreateModal(true);
   };
 
-  // 🟢 修正一：原本呼叫 api.createRaceEvent，改成 api.manageRaceEvent('create', ...)
   const handleCreate = async () => {
     if (!createForm.name || !createForm.date) return;
     setSubmitting(true);
@@ -230,12 +225,18 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
       setSelectedPeopleId(String(participant.people_id || participant.id));
     } else {
       setJoinForm({ value: '', race_group: '', note: '', photo_url: '' });
-      setSelectedPeopleId(user ? String(user.id) : '');
+      
+      // 🟢 預設選取邏輯優化：管理員代報名時，自動選取第一位 RIDER；一般選手則選自己
+      if (canManage) {
+        const eligibleRiders = people.filter(p => !p.is_hidden && String(p.roles).includes('RIDER'));
+        setSelectedPeopleId(eligibleRiders.length > 0 ? String(eligibleRiders[0].id) : (user ? String(user.id) : ''));
+      } else {
+        setSelectedPeopleId(user ? String(user.id) : '');
+      }
     }
     setShowJoinModal({ show: true, event, participant });
   };
 
-  // 🟢 修正二：原本呼叫 api.submitRaceRecord，改成 api.joinOrUpdateRace，並傳入正確的 positional arguments
   const handleJoin = async () => {
     const { event } = showJoinModal;
     if (!event) return;
@@ -271,7 +272,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     setExitConfirm({ show: true, eventId, peopleId });
   };
 
-  // 🟢 修正三：原本呼叫 api.deleteRaceRecord，改成 api.exitRace
   const confirmExitRace = async () => {
     const { eventId, peopleId } = exitConfirm;
     if (!eventId || !peopleId) return;
@@ -297,7 +297,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     setDeleteConfirm({ show: true, id, count });
   };
 
-  // 🟢 修正四：原本呼叫 api.deleteRaceEvent，改成 api.manageRaceEvent('delete', {id: ...})
   const confirmDeleteRaceEvent = async () => {
     if (!deleteConfirm.id) return;
     setSubmitting(true);
@@ -315,7 +314,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     }
   };
 
-  // 🟢 修正五：原本呼叫 api.submitRaceRecord，改成 api.joinOrUpdateRace
   const handleTogglePersonalHonor = async () => {
     const { event, participant } = personalHonorConfirm;
     if (!event || !participant) return;
@@ -342,7 +340,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     }
   };
 
-  // 🟢 修正六：原本呼叫 api.toggleGlobalHonor，改成 api.setGlobalHonor
   const handleToggleGlobalHonor = async () => {
     const { participant } = globalHonorConfirm;
     if (!participant) return;
@@ -558,6 +555,9 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                 const cardBorderClass = visualIsPast ? 'border-white/5 bg-zinc-950/20' : hasJoined ? 'border-chiachia-green/30 bg-chiachia-green/5' : 'border-white/5 bg-zinc-950/40';
                 const grayscaleClass = visualIsPast ? 'opacity-60 grayscale' : '';
 
+                // 🟢 按鈕顯示邏輯修正：只要能 Manage，永遠出現加入選手 (+號)。若不能 Manage 但已報名，則出現退出。
+                const showEventButton = canManage || (!isPast || hasJoined);
+
                 return (
                   <div key={event.id} id={`race-card-${event.id}`} className="relative group animate-fade-in">
                     <div className={`relative glass-card rounded-[28px] overflow-hidden border backdrop-blur-xl transition-all ${cardBorderClass} ${grayscaleClass} active:scale-[0.98] active:bg-zinc-800/50`} onClick={() => setExpandedEventId(isExpanded ? null : event.id)}>
@@ -591,21 +591,41 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                             </button>
                           </div>
                         </div>
-                        {(!isPast || hasJoined || canManage) && (
+                        
+                        {/* 🟢 按鈕修復：AIDE 等管理員永遠顯示加入按鈕，點擊後可在彈窗選擇幫誰報名 */}
+                        {showEventButton && (
                           <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 pointer-events-auto">
-                            <button 
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                if (isRiderMode && hasJoined) { 
+                            {canManage ? (
+                              <button 
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  openJoinModal(event); // 管理員點外層永遠是「新增/代報名」
+                                }} 
+                                className="p-3 rounded-xl transition-all shadow-lg border active:scale-95 bg-white/10 border-white/20 text-white"
+                              >
+                                <UserPlus size={20} />
+                              </button>
+                            ) : hasJoined ? (
+                              <button 
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
                                   handleExitRace(event.id, user.id); 
-                                } else { 
+                                }} 
+                                className="p-3 rounded-xl transition-all shadow-lg border active:scale-95 bg-rose-500/10 text-rose-500 border-rose-500/20"
+                              >
+                                <LogOut size={20} />
+                              </button>
+                            ) : !isPast ? (
+                              <button 
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
                                   openJoinModal(event, selfParticipant); 
-                                } 
-                              }} 
-                              className={`p-3 rounded-xl transition-all shadow-lg border active:scale-95 ${hasJoined ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 'bg-white/10 border-white/20 text-white'}`}
-                            >
-                              {hasJoined ? <LogOut size={20} /> : <UserPlus size={20} />}
-                            </button>
+                                }} 
+                                className="p-3 rounded-xl transition-all shadow-lg border active:scale-95 bg-white/10 border-white/20 text-white"
+                              >
+                                <UserPlus size={20} />
+                              </button>
+                            ) : null}
                           </div>
                         )}
                       </div>
@@ -625,6 +645,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                             {event.participants && event.participants.map((p) => {
                               const pid = String(p.people_id || p.id);
                               const isSelf = pid === String(user?.id);
+                              // 管理員可以編輯任何人；若不是管理員，只能編輯自己
                               const canEdit = canManage || isSelf;
                               const isPersonalHonor = !!p.is_personal_honor;
                               const globalHonorExpiry = p.global_honor_expires_at || 0;
@@ -868,18 +889,37 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                   <span className="text-sm font-black text-white truncate">{showJoinModal.event?.name}</span>
                   <span className="text-[10px] text-zinc-400 font-mono font-bold">{showJoinModal.event?.date} · {showJoinModal.event?.location || '未定地點'}</span>
                 </div>
+                
+                {/* 🟢 修復二：高質感的橫向大頭貼選單，且精準過濾只包含 RIDER 角色 */}
                 {canManage && !showJoinModal.participant && (
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">指定報名選手</label>
-                    <div className="relative">
-                      <select onChange={e => setShowJoinModal(prev => ({ ...prev, participant: people.find(p => String(p.id) === e.target.value) as any }))} className="w-full appearance-none bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-white outline-none font-bold focus:border-chiachia-green/50">
-                        <option value="">選擇選手...</option>
-                        {people.filter(p => !p.is_hidden && !hasRole(p, ROLES.DEV)).map(p => <option key={p.id} value={p.id}>{p.full_name || p.name} ({p.name})</option>)}
-                      </select>
-                      <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"/>
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">選擇報名選手</label>
+                    <div className="flex gap-3 overflow-x-auto no-scrollbar py-2 -mx-2 px-2">
+                      {people
+                        .filter(p => !p.is_hidden && String(p.roles).includes('RIDER'))
+                        .map((p: any) => (
+                          <button
+                            key={p.id}
+                            onClick={() => setSelectedPeopleId(String(p.id))}
+                            className={`shrink-0 flex flex-col items-center gap-2 p-2.5 rounded-2xl border transition-all ${String(p.id) === selectedPeopleId ? 'bg-chiachia-green border-chiachia-green text-black shadow-glow-green scale-105' : 'bg-zinc-900 border-white/5 text-white hover:bg-zinc-800'}`}
+                          >
+                            <div className={`w-12 h-12 rounded-full overflow-hidden border-2 ${String(p.id) === selectedPeopleId ? 'border-black/20' : 'border-zinc-800'}`}>
+                              {p.s_url ? (
+                                <img src={p.s_url.split('#')[0]} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-500">{p.name?.[0]}</div>
+                              )}
+                            </div>
+                            <span className={`text-[10px] font-black tracking-wider ${String(p.id) === selectedPeopleId ? 'text-black' : 'text-zinc-400'}`}>{p.name}</span>
+                          </button>
+                      ))}
+                      {people.filter(p => !p.is_hidden && String(p.roles).includes('RIDER')).length === 0 && (
+                        <div className="text-xs text-zinc-500 italic py-2">目前沒有可報名的選手</div>
+                      )}
                     </div>
                   </div>
                 )}
+                
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">秒數紀錄</label>
