@@ -74,11 +74,17 @@ const App: React.FC = () => {
           runBackgroundSync();
       }
 
+      const user = api.getUser();
+      if (user && user.must_change_password && currentPage !== 'settings') {
+          console.log("[Auth] 偵測到強制改密碼需求，導向中...");
+          handleNavigation('settings'); // 導向至設定頁
+      }
+    
       return () => {
           window.removeEventListener('online', handleOnline);
           window.removeEventListener('offline', handleOffline);
       };
-  }, []);
+  }, [currentPage]);
 
   // 1. Silent Push Sync on App Load
   useEffect(() => {
