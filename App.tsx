@@ -49,6 +49,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
       const user = api.getUser();
+      console.log("偵測到的使用者物件:", user);
       if (user && user.must_change_password && currentPage !== 'settings') {
           console.log("[Auth] 強制檢查：未改密碼，跳轉至設定");
           handleNavigation('settings');
