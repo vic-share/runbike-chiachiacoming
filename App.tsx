@@ -12,6 +12,7 @@ import { DataRecord, LookupItem, TeamInfo, RaceEvent, LegendRecord } from './typ
 import { LockKeyhole, Loader2 } from 'lucide-react';
 // 🟢 匯入權限判定清單與工具
 import { hasPermission, PERMISSIONS } from './utils/auth';
+import ChangePasswordModal from './components/ChangePasswordModal';
 
 const DEFAULT_NAME = '睿睿';
 
@@ -46,6 +47,14 @@ const App: React.FC = () => {
   const [targetRaceId, setTargetRaceId] = useState<string | number | null>(null); // For Races
   const [settingsTarget, setSettingsTarget] = useState<string | null>(null); // For Settings (New)
 
+  useEffect(() => {
+      const user = api.getUser();
+      if (user && user.must_change_password && currentPage !== 'settings') {
+          console.log("[Auth] 強制檢查：未改密碼，跳轉至設定");
+          handleNavigation('settings');
+      }
+  }, [currentPage]);
+
   // Offline Detection & Sync
   useEffect(() => {
       const handleOnline = () => {
@@ -73,18 +82,12 @@ const App: React.FC = () => {
           };
           runBackgroundSync();
       }
-
-      const user = api.getUser();
-      if (user && user.must_change_password && currentPage !== 'settings') {
-          console.log("[Auth] 偵測到強制改密碼需求，導向中...");
-          handleNavigation('settings'); // 導向至設定頁
-      }
     
       return () => {
           window.removeEventListener('online', handleOnline);
           window.removeEventListener('offline', handleOffline);
       };
-  }, [currentPage]);
+  }, []);
 
   // 1. Silent Push Sync on App Load
   useEffect(() => {
@@ -453,7 +456,11 @@ const App: React.FC = () => {
       courseSystemEnabled={courseSystemEnabled}
       isOffline={isOffline}
     >
-      {renderPage()}
+      {api.getUser()?.must_change_password && (
+      <div className="fixed inset-0 z-[100000] bg-black/95 backdrop-blur-md flex items-center justify-center">
+        <ChangePasswordModal onComplete={() => window.location.reload()} />
+      </div>
+      )}
       
       {/* PWA Install Prompt */}
       <InstallPwaModal />
