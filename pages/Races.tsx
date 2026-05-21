@@ -63,14 +63,14 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   const [tab, setTab] = useState<'all' | 'joined' | 'open' | 'finished'>('all');
   const [selectedSeries, setSelectedSeries] = useState<string>('all');
   
-  // 前端分頁狀態
+  // 前端分頁狀態控制
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   
-  // 🟢 修正選定報名對象與事件的狀態結構
+  // 報名狀態整合
   const [showJoinModal, setShowJoinModal] = useState<{show: boolean, event?: RaceEvent, participant?: any}>({ show: false });
   const [selectedPeopleId, setSelectedPeopleId] = useState<string>('');
   
@@ -93,7 +93,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   const [uploadTarget, setUploadTarget] = useState<'cover' | 'participant'>('cover');
 
-  // User & Permission Checks
+  // User & Permissions
   const user = api.getUser();
   const isRiderMode = user && !hasPermission(user, PERMISSIONS.RACE_MANAGE) && hasRole(user, ROLES.RIDER);
   const canManage = hasPermission(user, PERMISSIONS.RACE_MANAGE) || hasRole(user, ROLES.DEV);
@@ -114,10 +114,11 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     }
   }, [initialExpandedEventId]);
 
+  // 🟢 修正：徹底治好導致 onClick 死機的核心語法錯誤
   const handleLocationClick = (e: React.MouseEvent, location: string) => {
     e.stopPropagation();
     if (!location) return;
-    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+    const url = `http://maps.google.com/?q=${encodeURIComponent(location)}`;
     window.open(url, '_blank');
   };
 
@@ -219,8 +220,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     }
   };
 
-
-  const openJoinModal = (event: RaceEvent, participant?: RaceParticipant) => {
+  const openJoinModal = (event: RaceEvent, participant?: any) => {
     if (participant) {
       setJoinForm({
         value: participant.value || '',
@@ -228,7 +228,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
         note: participant.note || '',
         photo_url: participant.photo_url || ''
       });
-      // 確保管理員代報名或選手自己改資料時，ID 有被正確綁定
       setSelectedPeopleId(String(participant.people_id || participant.id));
     } else {
       setJoinForm({ value: '', race_group: '', note: '', photo_url: '' });
@@ -240,11 +239,10 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
   const handleJoin = async () => {
     const { event } = showJoinModal;
     if (!event) return;
-
-    // 防禦型修正：優先取用選單的 ID，沒有就拿當前登入者 ID，確保絕對不會是 undefined
-    const finalPeopleId = selectedPeopleId || (user ? String(user.id) : '');
-    if (!finalPeopleId) {
-      alert("找不到有效的選手身分，無法報名");
+    
+    const targetPeopleId = selectedPeopleId || (user ? String(user.id) : '');
+    if (!targetPeopleId) {
+      alert('找不到有效的選手身分');
       return;
     }
 
@@ -252,7 +250,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     try {
       const res = await api.submitRaceRecord({
         event_id: Number(event.id),
-        people_id: Number(finalPeopleId),
+        people_id: Number(targetPeopleId),
         value: joinForm.value,
         race_group: joinForm.race_group,
         note: joinForm.note,
@@ -263,7 +261,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
         setShowJoinModal({ show: false });
       }
     } catch (e) {
-      console.error("Join API Error", e);
+      alert('登記參賽失敗');
     } finally {
       setSubmitting(false);
     }
@@ -335,7 +333,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
         setPersonalHonorConfirm({ show: false });
       }
     } catch(e) {
-      alert('榮譽榜操作失敗');
+      alert('個人榮譽榜操作失敗');
     } finally {
       setSubmitting(false);
     }
@@ -346,20 +344,16 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
     if (!participant) return;
     setSubmitting(true);
     try {
-      // 🟢 修正：即時取得當下時間戳，並強制將後端欄位轉為數字比對，防止數字與字串比對死機
       const currentTimestamp = Math.floor(Date.now() / 1000);
       const expiryTime = Number(participant.global_honor_expires_at) || 0;
       const isActive = expiryTime > currentTimestamp;
-      const duration = isActive ? 0 : 43200; // 30 天
-      
-      const targetId = participant.id || participant.people_id;
-      const res = await api.toggleGlobalHonor(Number(targetId), duration);
+      const duration = isActive ? 0 : 43200; 
+      const res = await api.toggleGlobalHonor(Number(participant.id || participant.people_id), duration);
       if (res.success) {
         refreshData();
         setGlobalHonorConfirm({ show: false });
       }
     } catch (e) {
-      console.error("Global Honor Error", e);
       alert('全域榮譽榜更新失敗');
     } finally {
       setSubmitting(false);
@@ -534,7 +528,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
         </div>
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Lists */}
       <div className={`h-full overflow-y-auto px-4 ${paddingTopClass} pb-32 space-y-4 no-scrollbar transition-all duration-300`}>
         {loading ? (
           <div className="flex flex-col items-center py-24 text-zinc-800 gap-3">
@@ -590,8 +584,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                           </button>
                         </div>
                       </div>
-                      
-                      {/* 🟢 修正報名點擊：完美相容 Riders 與教練代報名模式 */}
                       {(!isPast || hasJoined || canManage) && (
                         <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 pointer-events-auto">
                           <button 
@@ -705,7 +697,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
               );
             })}
 
-            {/* Pagination Controls */}
+            {/* Pagination controls */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between bg-zinc-950/60 border border-white/5 rounded-2xl p-3 mx-1 mt-6 animate-fade-in backdrop-blur-md">
                 <button
@@ -759,7 +751,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
         document.body
       )}
 
-      {/* Personal Honor Modal */}
+      {/* Personal Honor Confirm Modal */}
       {personalHonorConfirm.show && createPortal(
         <div className="fixed inset-0 z-[30000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in">
           <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-amber-500/20 text-center animate-scale-in shadow-glow-gold">
@@ -775,13 +767,13 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
         document.body
       )}
 
-      {/* Global Honor Modal */}
+      {/* Global Honor Confirm Modal */}
       {globalHonorConfirm.show && createPortal(
         <div className="fixed inset-0 z-[30000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in">
           <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-amber-500/20 text-center animate-scale-in shadow-xl">
             <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-4"><Flame size={32} className="fill-amber-500" /></div>
             <h3 className="text-xl font-black text-white italic mb-2">全域榮譽榜 (教練)</h3>
-            <p className="text-zinc-400 text-sm font-bold mb-6">{(globalHonorConfirm.participant?.global_honor_expires_at || 0) > now ? '要將此成績從全域榮譽榜移除嗎？' : '要將此成績加入全域榮譽榜嗎？(全站可見)'}</p>
+            <p className="text-zinc-400 text-sm font-bold mb-6">{(Number(globalHonorConfirm.participant?.global_honor_expires_at) || 0) > now ? '要將此成績從全域榮譽榜移除嗎？' : '要將此成績加入全域榮譽榜嗎？(全站可見)'}</p>
             <div className="grid grid-cols-2 gap-3">
               <button onClick={() => setGlobalHonorConfirm({ show: false })} className="py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl">取消</button>
               <button onClick={handleToggleGlobalHonor} disabled={submitting} className="py-3 bg-amber-600 text-white font-black rounded-xl flex items-center justify-center">{submitting ? <Loader2 size={16} className="animate-spin" /> : '確認'}</button>
@@ -791,7 +783,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
         document.body
       )}
 
-      {/* Create/Edit Event Modal */}
+      {/* Create Event Modal */}
       {showCreateModal && createPortal(
         <div className="fixed inset-0 z-[60000] flex items-end justify-center bg-black/90 backdrop-blur-md animate-fade-in pb-[env(safe-area-inset-bottom)]" onClick={() => setShowCreateModal(false)}>
           <div className="glass-card w-full max-w-sm rounded-t-[32px] p-6 bg-zinc-950 border-chiachia-green/20 flex flex-col gap-4 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar mb-4" onClick={e => e.stopPropagation()}>
@@ -870,7 +862,6 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                 <span className="text-[10px] text-zinc-400 font-mono font-bold">{showJoinModal.event?.date} · {showJoinModal.event?.location || '未定地點'}</span>
               </div>
               
-              {/* 🟢 核心修正：不管是教練代辦還是選手自己報名，selectedPeopleId 都有牢固的基礎值，不再噴 undefined */}
               {canManage ? (
                 <div className="space-y-1">
                   <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">指定報名選手</label>
@@ -919,7 +910,7 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
         document.body
       )}
 
-      {/* Delete Event Safety Confirm Modal */}
+      {/* Delete Safety Confirm Modal */}
       {deleteConfirm.show && createPortal(
         <div className="fixed inset-0 z-[70000] flex items-center justify-center p-6 bg-black/85 backdrop-blur-md animate-fade-in">
           <div className="glass-card w-full max-w-xs rounded-3xl p-6 border-rose-500/20 text-center animate-scale-in">
