@@ -458,11 +458,13 @@ const App: React.FC = () => {
 
     <>
       {renderPage()}
-      {/*api.getUser()?.must_change_password && (
-      <div className="fixed inset-0 z-[100000] bg-black/95 backdrop-blur-md flex items-center justify-center">
-        <ChangePasswordModal onComplete={() => window.location.reload()} />
-      </div>
-      )} */
+
+      {/* 強制改密碼遮罩層 */}
+      {api.getUser()?.must_change_password && (
+        <div className="fixed inset-0 z-[100000] bg-black/95 backdrop-blur-md flex items-center justify-center">
+          <ChangePasswordModal onComplete={() => window.location.reload()} />
+        </div>
+      )}
       
       {/* PWA Install Prompt */}
       <InstallPwaModal />
