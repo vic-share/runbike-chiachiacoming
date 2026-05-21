@@ -12,6 +12,7 @@ import { DataRecord, LookupItem, TeamInfo, RaceEvent, LegendRecord } from './typ
 import { LockKeyhole, Loader2 } from 'lucide-react';
 // 🟢 匯入權限判定清單與工具
 import { hasPermission, PERMISSIONS } from './utils/auth';
+import ChangePasswordModal from './components/ChangePassword';
 
 const DEFAULT_NAME = '睿睿';
 
@@ -46,6 +47,15 @@ const App: React.FC = () => {
   const [targetRaceId, setTargetRaceId] = useState<string | number | null>(null); // For Races
   const [settingsTarget, setSettingsTarget] = useState<string | null>(null); // For Settings (New)
 
+  const [currentUser, setCurrentUser] = useState(api.getUser());
+
+  // 每當 currentPage 變化或重新登入時，手動更新一下 state
+  useEffect(() => {
+      setCurrentUser(api.getUser());
+  }, [currentPage]); // 這會確保當你登入成功或頁面切換時，UI 會更新
+
+
+
   // Offline Detection & Sync
   useEffect(() => {
       const handleOnline = () => {
@@ -73,7 +83,7 @@ const App: React.FC = () => {
           };
           runBackgroundSync();
       }
-
+    
       return () => {
           window.removeEventListener('online', handleOnline);
           window.removeEventListener('offline', handleOffline);
@@ -325,10 +335,14 @@ const App: React.FC = () => {
   };
 
   const handleLoginSuccess = () => {
-      if (returnPage) {
-          setCurrentPage(returnPage);
-          setReturnPage(null);
-      }
+    const user = api.getUser();
+    setCurrentUser(user); // ← 更新 state，觸發 React re-render
+    if (user && user.must_change_password) {
+        console.log("[Auth] 偵測到登入後需改密碼，強制改密碼 Modal 將彈出");
+    } else if (returnPage) {
+        setCurrentPage(returnPage);
+        setReturnPage(null);
+    }
   };
 
   const renderPage = () => {
@@ -445,10 +459,19 @@ const App: React.FC = () => {
       title="嘉嘉來了"
       subtitle="Chia Chia Coming!"
       courseSystemEnabled={courseSystemEnabled}
-      isOffline={isOffline}
+      isOffline={isOffline} 
     >
       {renderPage()}
+
+      {/* 強制改密碼遮罩層 */}
+      {currentUser?.must_change_password && (
+        <div className="fixed inset-0 z-[100000] bg-black/95 backdrop-blur-md flex items-center justify-center">
+          <ChangePasswordModal onComplete={() => window.location.reload()} />
+        </div>
+      )}
       
+
+
       {/* PWA Install Prompt */}
       <InstallPwaModal />
       

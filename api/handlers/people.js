@@ -46,14 +46,35 @@ export const handlePeople = async ({ request, env, path, method, getDB, TEAM_ID,
 
     if (path === "/api/login" && method === "POST") {
         const { id, password } = await request.json();
-        const person = await getDB().prepare(`SELECT id, team_id, name, roles, password, birthday, avatar_url as s_url, full_photo_url as b_url, bio as myword, is_retired as is_hidden, full_name, created_at FROM People WHERE id = ? AND team_id = ?`).bind(id, TEAM_ID).first();
+        
+        // 1. SELECT 語句加入 must_change_password
+        const person = await getDB().prepare(`
+            SELECT id, team_id, name, roles, password, birthday, avatar_url as s_url, 
+                   full_photo_url as b_url, bio as myword, is_retired as is_hidden, 
+                   full_name, created_at, must_change_password 
+            FROM People WHERE id = ? AND team_id = ?
+        `).bind(id, TEAM_ID).first();
+        
         if (!person) return Response.json({ success: false, msg: "查無此人" }, { headers: corsHeaders });
+        
         const inputHash = await hashPassword(password, env.PASSWORD_SALT);
         const storedPass = person.password ? String(person.password) : null;
-        if (!storedPass || inputHash !== storedPass) return Response.json({ success: false, msg: "密碼錯誤" }, { headers: corsHeaders });
+        
+        if (!storedPass || inputHash !== storedPass) 
+            return Response.json({ success: false, msg: "密碼錯誤" }, { headers: corsHeaders });
+        
+        // 🟢 檢查是否需要強制改密碼 (must_change_password 為 1 或 true)
+        const needsPasswordChange = !!person.must_change_password;
+    
         const token = crypto.randomUUID();
         await env.RUNBIKE_KV.put(`SESSION_${token}`, JSON.stringify(person), { expirationTtl: 31536000 });
-        return Response.json({ success: true, user: person, token }, { headers: corsHeaders });
+    
+        // 🟢 回傳時帶上此狀態
+        return Response.json({ 
+            success: true, 
+            user: { ...person, must_change_password: needsPasswordChange }, // ← ...person
+            token,
+        }, { headers: corsHeaders });
     }
 
     return null; // Passthrough if not matched

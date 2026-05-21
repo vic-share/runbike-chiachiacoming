@@ -44,5 +44,29 @@ export const handleSettings = async ({ request, env, path, method, corsHeaders }
         }
     }
 
+    if (path === "/api/change-password" && method === "POST") {
+        const { oldPassword, newPassword } = await request.json();
+        
+        // 🟢 檢查是否有 Token 解析出的 user
+        if (!request.user || !request.user.id) {
+            return Response.json({ success: false, msg: "請先登入" }, { status: 401, headers: corsHeaders });
+        }
+
+        const userId = request.user.id;
+        const person = await getDB().prepare(`SELECT password FROM People WHERE id = ?`).bind(userId).first();
+        
+        if (!person) return Response.json({ success: false, msg: "帳號不存在" }, { status: 404, headers: corsHeaders });
+
+        const inputHash = await hashPassword(oldPassword, env.PASSWORD_SALT);
+        if (person.password !== inputHash) {
+            return Response.json({ success: false, msg: "舊密碼錯誤" }, { status: 400, headers: corsHeaders });
+        }
+
+        const newHash = await hashPassword(newPassword, env.PASSWORD_SALT);
+        await getDB().prepare(`UPDATE People SET password = ?, must_change_password = 0 WHERE id = ?`).bind(newHash, userId).run();
+
+        return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
     return null;
 };
