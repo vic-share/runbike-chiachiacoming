@@ -44,7 +44,7 @@ export const handleApiRequest = async (request, env, ctx) => {
             response = await handleFinanceAndTickets(context);
         } else if (path.startsWith("/api/training-")) {
             response = await handleTraining(context);
-        } else if (path.startsWith("/api/settings/")) {
+        } else if (path.startsWith("/api/settings/") || path === "/api/change-password") {
             response = await handleSettings(context);
         }
 
