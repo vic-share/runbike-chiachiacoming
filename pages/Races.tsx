@@ -667,25 +667,56 @@ const Races: React.FC<RacesProps> = ({ people, raceGroups, refreshData, initialE
                                     </div>
                                   </div>
                                   
-                                  {isPast && isSelf && p.race_group && !canManage && (
-                                    <button onClick={() => setPersonalHonorConfirm({ show: true, event, participant: p })} className={`w-8 h-8 flex items-center justify-center rounded-full transition-all border active:scale-95 ${isPersonalHonor ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 shadow-glow-gold' : 'bg-zinc-800 text-zinc-500 border-white/5'}`}>
-                                      <Flame size={14} className={isPersonalHonor ? 'fill-amber-500' : ''} />
-                                    </button>
-                                  )}
-                                  
-                                  {isPast && canManage && p.race_group && (
-                                    <button onClick={() => setGlobalHonorConfirm({ show: true, event, participant: p })} className={`h-8 px-2 flex items-center justify-center rounded-full transition-all border active:scale-95 gap-1 ${isGlobalHonorActive ? 'bg-amber-500 text-black border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-zinc-800 text-zinc-500 border-white/5'}`}>
-                                      <Flame size={14} className={isGlobalHonorActive ? 'fill-black' : ''} />
-                                      {isGlobalHonorActive && (
-                                        <span className="text-[9px] font-black font-mono">
-                                          {daysLeft > 0 ? `${daysLeft}D` : `${Math.floor(timeLeftSeconds/60)}m`}
-                                        </span>
-                                      )}
-                                    </button>
-                                  )}
-                                  {canEdit && (
-                                    <button onClick={() => openJoinModal(event, p)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 text-zinc-400 hover:text-white"><Edit2 size={14}/></button>
-                                  )}
+                                  {isPast && isSelf && p.race_group && (
+                                      <button 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setPersonalHonorConfirm({ show: true, event, participant: p });
+                                        }} 
+                                        className={`w-8 h-8 flex items-center justify-center rounded-full transition-all border active:scale-95 ${
+                                          isPersonalHonor 
+                                            ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 shadow-glow-gold' 
+                                            : 'bg-zinc-800 text-zinc-500 border-white/5'
+                                        }`}
+                                      >
+                                        <Flame size={14} className={isPersonalHonor ? 'fill-amber-500' : ''} />
+                                      </button>
+                                    )}
+                                    
+                                    {/* 🟢 條件 2：只要擁有管理權限 (canManage)，永遠顯示「全域榮譽榜」按鈕 */}
+                                    {isPast && canManage && p.race_group && (
+                                      <button 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setGlobalHonorConfirm({ show: true, event, participant: p });
+                                        }} 
+                                        className={`h-8 px-2 flex items-center justify-center rounded-full transition-all border active:scale-95 gap-1 ${
+                                          isGlobalHonorActive 
+                                            ? 'bg-amber-500 text-black border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.5)]' 
+                                            : 'bg-zinc-800 text-zinc-500 border-white/5'
+                                        }`}
+                                      >
+                                        <Flame size={14} className={isGlobalHonorActive ? 'fill-black' : ''} />
+                                        {isGlobalHonorActive && (
+                                          <span className="text-[9px] font-black font-mono">
+                                            {daysLeft > 0 ? `${daysLeft}D` : `${Math.floor(timeLeftSeconds/60)}m`}
+                                          </span>
+                                        )}
+                                      </button>
+                                    )}
+
+                                    {/* 編輯按鈕：只有本人或管理員可編輯成績 */}
+                                    {canEdit && (
+                                      <button 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openJoinModal(event, p);
+                                        }} 
+                                        className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 text-zinc-400 hover:text-white"
+                                      >
+                                        <Edit2 size={14}/>
+                                      </button>
+                                    )}
                                 </div>
                               );
                             })}
