@@ -72,9 +72,8 @@ export const handlePeople = async ({ request, env, path, method, getDB, TEAM_ID,
         // 🟢 回傳時帶上此狀態
         return Response.json({ 
             success: true, 
-            user: person, 
-            token,
-            must_change_password: needsPasswordChange // 前端靠這個來決定是否導向
+            user: { person, must_change_password: needsPasswordChange } 
+            token, // 前端靠這個來決定是否導向
         }, { headers: corsHeaders });
     }
 
