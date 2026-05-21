@@ -45,28 +45,50 @@ export const handleSettings = async ({ request, env, path, method, corsHeaders }
     }
 
     if (path === "/api/change-password" && method === "POST") {
-        const { oldPassword, newPassword } = await request.json();
-        
-        // 🟢 檢查是否有 Token 解析出的 user
-        if (!request.user || !request.user.id) {
-            return Response.json({ success: false, msg: "請先登入" }, { status: 401, headers: corsHeaders });
-        }
+    const { oldPassword, newPassword } = await request.json();
 
-        const userId = request.user.id;
-        const person = await getDB().prepare(`SELECT password FROM People WHERE id = ?`).bind(userId).first();
-        
-        if (!person) return Response.json({ success: false, msg: "帳號不存在" }, { status: 404, headers: corsHeaders });
+    // 從 Authorization header 取 token
+    const authHeader = request.headers.get('Authorization') || '';
+    const token = authHeader.replace('Bearer ', '').trim();
 
-        const inputHash = await hashPassword(oldPassword, env.PASSWORD_SALT);
-        if (person.password !== inputHash) {
-            return Response.json({ success: false, msg: "舊密碼錯誤" }, { status: 400, headers: corsHeaders });
-        }
-
-        const newHash = await hashPassword(newPassword, env.PASSWORD_SALT);
-        await getDB().prepare(`UPDATE People SET password = ?, must_change_password = 0 WHERE id = ?`).bind(newHash, userId).run();
-
-        return Response.json({ success: true }, { headers: corsHeaders });
+    if (!token) {
+        return Response.json({ success: false, msg: "請先登入" }, { status: 401, headers: corsHeaders });
     }
+
+    // 從 KV 取出 session
+    const sessionData = await env.RUNBIKE_KV.get(`SESSION_${token}`, { type: "json" });
+    if (!sessionData || !sessionData.id) {
+        return Response.json({ success: false, msg: "Session 已過期，請重新登入" }, { status: 401, headers: corsHeaders });
+    }
+
+    const userId = sessionData.id;
+
+    // 驗證舊密碼
+    const person = await getDB().prepare(`SELECT password FROM People WHERE id = ?`).bind(userId).first();
+    if (!person) {
+        return Response.json({ success: false, msg: "帳號不存在" }, { status: 404, headers: corsHeaders });
+    }
+
+    const inputHash = await hashPassword(oldPassword, env.PASSWORD_SALT);
+    if (person.password !== inputHash) {
+        return Response.json({ success: false, msg: "舊密碼錯誤" }, { status: 400, headers: corsHeaders });
+    }
+
+    // 更新密碼
+    const newHash = await hashPassword(newPassword, env.PASSWORD_SALT);
+    await getDB().prepare(`
+        UPDATE People SET password = ?, must_change_password = 0 WHERE id = ?
+    `).bind(newHash, userId).run();
+
+    // 更新 KV session 裡的 must_change_password
+    await env.RUNBIKE_KV.put(
+        `SESSION_${token}`,
+        JSON.stringify({ ...sessionData, must_change_password: 0 }),
+        { expirationTtl: 31536000 }
+    );
+
+    return Response.json({ success: true, msg: "密碼修改成功" }, { headers: corsHeaders });
+}
 
     return null;
 };
