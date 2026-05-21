@@ -1,3 +1,5 @@
+import { hashPassword } from '../utils/auth.js';
+
 export const handleSettings = async ({ request, env, path, method, corsHeaders }) => {
     if (path === "/api/settings/course-system") {
         if (method === "GET") {
