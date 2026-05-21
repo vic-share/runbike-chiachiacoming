@@ -455,7 +455,7 @@ const App: React.FC = () => {
       subtitle="Chia Chia Coming!"
       courseSystemEnabled={courseSystemEnabled}
       isOffline={isOffline} 
-    
+    >
       {renderPage()}
 
       {/* 強制改密碼遮罩層 */}
