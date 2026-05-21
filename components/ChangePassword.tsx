@@ -13,7 +13,7 @@ const handleSubmit = async () => {
         // 直接使用 fetch 確保路徑與 Header 正確，避開 api.ts 封裝問題
         const res = await fetch('/api/change-password', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('CHIACHIA_TOKEN')}` },
             body: JSON.stringify({ 
                 oldPassword: passwords.old, 
                 newPassword: passwords.new 
