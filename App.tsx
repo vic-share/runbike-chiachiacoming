@@ -454,8 +454,7 @@ const App: React.FC = () => {
       title="嘉嘉來了"
       subtitle="Chia Chia Coming!"
       courseSystemEnabled={courseSystemEnabled}
-      isOffline={isOffline} >
-
+      isOffline={isOffline} 
     <>
       {renderPage()}
 
@@ -467,7 +466,7 @@ const App: React.FC = () => {
       )}
       
 
-      
+
       {/* PWA Install Prompt */}
       <InstallPwaModal />
       
