@@ -296,18 +296,17 @@ const App: React.FC = () => {
             return;
         }
 
-    if (user) {
-            // 先判斷是否為選手角色 (排除教練/開發者)
-            const isOnlyRider = hasRole(user, ROLES.RACING) && !hasRole(user, ROLES.COACH) && !hasRole(user, ROLES.DEV);          
-            if (isOnlyRider) {
-                const matchedPerson = people.find(p => String(p.user_id) === String(user.id));
-                
-                if (matchedPerson) {
-                    handleUpdateActivePerson(matchedPerson.id);
-                }
-            }
-            // 如果是教練/管理職，保持原樣即可，不需要額外處理
-        }        
+        if (hasRole(user, ROLES.RACING) && !hasRole(user, ROLES.COACH) && !hasRole(user, ROLES.DEV)) {
+          const selfPerson = activePeople.find(p => String(p.id) === String(user.id));
+          if (selfPerson) handleUpdateActivePerson(selfPerson.id);
+        } else {
+          // COACH/DEV：隨機選一位 RACING 選手
+          const racingPeople = activePeople.filter(p => String(p.roles).includes('RACING'));
+          if (racingPeople.length > 0) {
+            const random = racingPeople[Math.floor(Math.random() * racingPeople.length)];
+            handleUpdateActivePerson(random.id);
+          }
+        }      
     }
 
     // Require Login for Races AND Courses
