@@ -15,8 +15,8 @@ const ChangePassword = ({ onComplete }: { onComplete: () => void }) => {
       setErrorMsg('新密碼不一致');
       return;
     }
-    if (passwords.new.length < 4) {
-      setErrorMsg('新密碼至少需要 4 個字元');
+    if (passwords.new.length < 6) {
+      setErrorMsg('新密碼至少需要 6 個字元');
       return;
     }
 
