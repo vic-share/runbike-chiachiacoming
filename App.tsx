@@ -344,12 +344,15 @@ const App: React.FC = () => {
     const user = api.getUser();
     setCurrentUser(user);
     if (user && user.must_change_password) {
-        // 不需要處理導向，直接讓 Layout 監測到狀態，Modal 就會彈出來
-        console.log("[Auth] 偵測到登入後需改密碼");
-    } else if (returnPage) {
+        console.log("[Auth] 登入成功，偵測到需改密碼，執行強制刷新...");
+        window.location.reload(); // 這是最暴力也最有效的手段
+        return;
+    }
+    
+    if (returnPage) {
       setCurrentPage(returnPage);
       setReturnPage(null);
-  }
+    }
   };
 
   const renderPage = () => {
