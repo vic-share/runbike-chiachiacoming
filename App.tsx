@@ -54,13 +54,7 @@ const App: React.FC = () => {
       setCurrentUser(api.getUser());
   }, [currentPage]); // 這會確保當你登入成功或頁面切換時，UI 會更新
 
-  // 然後把所有的 api.getUser() 換成 currentUser
-  // 例如：
-  {currentUser?.must_change_password && (
-    <div className="fixed inset-0 z-[100000] ...">
-      <ChangePasswordModal onComplete={() => window.location.reload()} />
-    </div>
-  )}
+
 
   // Offline Detection & Sync
   useEffect(() => {
@@ -342,16 +336,12 @@ const App: React.FC = () => {
 
   const handleLoginSuccess = () => {
     const user = api.getUser();
-    setCurrentUser(user);
+    setCurrentUser(user); // ← 更新 state，觸發 React re-render
     if (user && user.must_change_password) {
-        console.log("[Auth] 登入成功，偵測到需改密碼，執行強制刷新...");
-        window.location.reload(); // 這是最暴力也最有效的手段
-        return;
-    }
-    
-    if (returnPage) {
-      setCurrentPage(returnPage);
-      setReturnPage(null);
+        console.log("[Auth] 偵測到登入後需改密碼，強制改密碼 Modal 將彈出");
+    } else if (returnPage) {
+        setCurrentPage(returnPage);
+        setReturnPage(null);
     }
   };
 
@@ -474,7 +464,7 @@ const App: React.FC = () => {
       {renderPage()}
 
       {/* 強制改密碼遮罩層 */}
-      {api.getUser()?.must_change_password && (
+      {currentUser?.must_change_password && (
         <div className="fixed inset-0 z-[100000] bg-black/95 backdrop-blur-md flex items-center justify-center">
           <ChangePasswordModal onComplete={() => window.location.reload()} />
         </div>
